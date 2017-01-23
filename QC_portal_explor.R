@@ -1,8 +1,13 @@
-# Look at Alona's QC metrics done on all IIP samples, incl. 26 FFPE trios (samples w germline, fresh frozen and FFPE)
+# Martina Mijuskovic
+# FFPE project
+# Generate QC plots, summarize data
+
+#install.packages(c("data.table", "dplyr", "ggvis", "zoo"))
 
 library("data.table")
 library("dplyr")
 library("ggvis")
+library("zoo")
 
 setwd("/Users/MartinaMijuskovic/Documents/FFPE")
 
@@ -139,8 +144,8 @@ dim(FFPE_data %>% filter(CENTER_CODE.x == "RTH", processingSchedule != ""))  # 2
 FFPE_data$clinicSampleDateTime  <- as.character(FFPE_data$clinicSampleDateTime)
 # Remove hours
 FFPE_data$SampleCollectionDate <- sapply(1:dim(FFPE_data)[1], function(x){
-                strsplit(FFPE_data$clinicSampleDateTime[x], split = " ")[[1]][1]
-              })
+  strsplit(FFPE_data$clinicSampleDateTime[x], split = " ")[[1]][1]
+})
 #sum(is.na(FFPE_data$SampleCollectionDate))
 
 # Convert collection date to Date variable
@@ -184,5 +189,14 @@ FFPE_Ox %>% ggvis(~SampleCollectionDate, ~COVERAGE_HOMOGENEITY, fill = ~factor(B
 # Plot Oxford samples by time grouped by overnight incubation
 FFPE_Ox %>% ggvis(~SampleCollectionDate, ~AT_DROP, fill = ~factor(OvernightIncubation)) %>% layer_points() %>% add_legend("fill", title = "Overnight Incubation") %>% scale_datetime("x", nice = "year")
 FFPE_Ox %>% ggvis(~SampleCollectionDate, ~COVERAGE_HOMOGENEITY, fill = ~factor(OvernightIncubation)) %>% layer_points() %>% add_legend("fill", title = "Overnight Incubation") %>% scale_datetime("x", nice = "year")
+
+# Boxplot (quarterly) for Oxford samples, with points
+# Group samples by quarters and unknown date
+FFPE_Ox$Quarter <- as.yearqtr(FFPE_Ox$SampleCollectionDate)
+FFPE_Ox$Quarter_nice <- format(FFPE_Ox$Quarter, format = "%y/0%q")
+FFPE_Ox$Quarter_nice <- as.factor(FFPE_Ox$Quarter_nice)
+#FFPE_Ox %>% ggvis(~Quarter, ~AT_DROP) %>% layer_points()
+#boxplot(FFPE_Ox$AT_DROP, group_by(FFPE_Ox$Quarter_nice))
+
 
 
