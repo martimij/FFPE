@@ -124,7 +124,7 @@ dim(FFPE_data %>% filter(fixationStartDateTime != ""))  # 28
 dim(FFPE_data %>% filter(typeOfFixative != ""))  # 31
 dim(FFPE_data %>% filter(processingSchedule != ""))  # 30
 
-############  Summary and plots of OXFORD samples ############  
+############  Summary, plots of OXFORD samples ############  
 
 # Samples with collection date, fixation start, formalin type and incubation time available
 dim(FFPE_data %>% filter(CENTER_CODE.x == "RTH", clinicSampleDateTime != ""))  # 30 
