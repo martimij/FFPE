@@ -203,9 +203,9 @@ FFPE_Ox$Quarter_nice <- as.factor(FFPE_Ox$Quarter_nice)
 
 # By buffered formalin
 ggplot(FFPE_Ox, aes(x=Quarter_nice, y=AT_DROP, colour = BufferedFormalin)) + geom_boxplot() + geom_jitter() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Year/Quarter", y = "A/T Dropout")
-ggplot(FFPE_Ox, aes(x=Quarter_nice, y=COVERAGE_HOMOGENEITY, colour = BufferedFormalin)) + geom_boxplot() + geom_jitter() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Year/Quarter", y = "Coverage Homogeneity")
+ggplot(FFPE_Ox, aes(x=Quarter_nice, y=COVERAGE_HOMOGENEITY, colour = BufferedFormalin)) + geom_boxplot() + geom_jitter() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Year/Quarter", y = "Unevenness of coverage")
 # By incubation time
 ggplot(FFPE_Ox, aes(x=Quarter_nice, y=AT_DROP, colour = OvernightIncubation)) + geom_boxplot() + geom_jitter() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Year/Quarter", y = "A/T Dropout")
-ggplot(FFPE_Ox, aes(x=Quarter_nice, y=COVERAGE_HOMOGENEITY, colour = OvernightIncubation)) + geom_boxplot() + geom_jitter() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Year/Quarter", y = "Coverage Homogeneity")
+ggplot(FFPE_Ox, aes(x=Quarter_nice, y=COVERAGE_HOMOGENEITY, colour = OvernightIncubation)) + geom_boxplot() + geom_jitter() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Year/Quarter", y = "Unevenness of coverage ")
 
 
