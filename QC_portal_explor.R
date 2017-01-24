@@ -2,12 +2,13 @@
 # FFPE project
 # Generate QC plots, summarize data
 
-#install.packages(c("data.table", "dplyr", "ggvis", "zoo"))
+#install.packages(c("data.table", "dplyr", "ggvis", "zoo", "ggplot2"))
 
 library("data.table")
 library("dplyr")
 library("ggvis")
 library("zoo")
+library("ggplot2")
 
 setwd("/Users/MartinaMijuskovic/Documents/FFPE")
 
@@ -190,13 +191,21 @@ FFPE_Ox %>% ggvis(~SampleCollectionDate, ~COVERAGE_HOMOGENEITY, fill = ~factor(B
 FFPE_Ox %>% ggvis(~SampleCollectionDate, ~AT_DROP, fill = ~factor(OvernightIncubation)) %>% layer_points() %>% add_legend("fill", title = "Overnight Incubation") %>% scale_datetime("x", nice = "year")
 FFPE_Ox %>% ggvis(~SampleCollectionDate, ~COVERAGE_HOMOGENEITY, fill = ~factor(OvernightIncubation)) %>% layer_points() %>% add_legend("fill", title = "Overnight Incubation") %>% scale_datetime("x", nice = "year")
 
-# Boxplot (quarterly) for Oxford samples, with points
+### Boxplot (quarterly) for Oxford samples, with points
 # Group samples by quarters and unknown date
 FFPE_Ox$Quarter <- as.yearqtr(FFPE_Ox$SampleCollectionDate)
 FFPE_Ox$Quarter_nice <- format(FFPE_Ox$Quarter, format = "%y/0%q")
 FFPE_Ox$Quarter_nice <- as.factor(FFPE_Ox$Quarter_nice)
 #FFPE_Ox %>% ggvis(~Quarter, ~AT_DROP) %>% layer_points()
-#boxplot(FFPE_Ox$AT_DROP, group_by(FFPE_Ox$Quarter_nice))
+# FFPE_Ox %>% ggvis(~Quarter_nice, ~AT_DROP) %>% layer_boxplots() %>% layer_points(fill = ~factor(BufferedFormalin))
+# FFPE_Ox %>% ggvis(~Quarter_nice, ~COVERAGE_HOMOGENEITY) %>% layer_boxplots() %>% layer_points(fill = ~factor(BufferedFormalin))
+#FFPE_Ox %>% ggvis(~SampleCollectionDate, ~AT_DROP, fill = ~factor(BufferedFormalin)) %>% layer_smooths() %>% layer_points() %>% add_legend("fill", title = "Buffered Formalin") %>% scale_datetime("x", nice = "year")
 
+# By buffered formalin
+ggplot(FFPE_Ox, aes(x=Quarter_nice, y=AT_DROP, colour = BufferedFormalin)) + geom_boxplot() + geom_jitter() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Year/Quarter", y = "A/T Dropout")
+ggplot(FFPE_Ox, aes(x=Quarter_nice, y=COVERAGE_HOMOGENEITY, colour = BufferedFormalin)) + geom_boxplot() + geom_jitter() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Year/Quarter", y = "Coverage Homogeneity")
+# By incubation time
+ggplot(FFPE_Ox, aes(x=Quarter_nice, y=AT_DROP, colour = OvernightIncubation)) + geom_boxplot() + geom_jitter() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Year/Quarter", y = "A/T Dropout")
+ggplot(FFPE_Ox, aes(x=Quarter_nice, y=COVERAGE_HOMOGENEITY, colour = OvernightIncubation)) + geom_boxplot() + geom_jitter() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Year/Quarter", y = "Coverage Homogeneity")
 
 
