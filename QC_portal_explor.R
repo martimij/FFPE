@@ -81,6 +81,7 @@ names(gmc)[3] <- "PATIENT_ID"
 names(gmc)[1] <- "CENTER_CODE"
 names(gmc)[4] <- "SAMPLE_LAB_ID"
 
+
 # Subset the gmc table for patient IDs in the QC_FFPE table
 gmc_FFPE <- gmc %>% filter(PATIENT_ID %in% QC_FFPE$PATIENT_ID)
 dim(gmc_FFPE)  # 329 samples (not all are FFPE)
@@ -192,20 +193,39 @@ FFPE_Ox %>% ggvis(~SampleCollectionDate, ~AT_DROP, fill = ~factor(OvernightIncub
 FFPE_Ox %>% ggvis(~SampleCollectionDate, ~COVERAGE_HOMOGENEITY, fill = ~factor(OvernightIncubation)) %>% layer_points() %>% add_legend("fill", title = "Overnight Incubation") %>% scale_datetime("x", nice = "year")
 
 ### Boxplot (quarterly) for Oxford samples, with points
+
 # Group samples by quarters and unknown date
 FFPE_Ox$Quarter <- as.yearqtr(FFPE_Ox$SampleCollectionDate)
 FFPE_Ox$Quarter_nice <- format(FFPE_Ox$Quarter, format = "%y/0%q")
 FFPE_Ox$Quarter_nice <- as.factor(FFPE_Ox$Quarter_nice)
-#FFPE_Ox %>% ggvis(~Quarter, ~AT_DROP) %>% layer_points()
-# FFPE_Ox %>% ggvis(~Quarter_nice, ~AT_DROP) %>% layer_boxplots() %>% layer_points(fill = ~factor(BufferedFormalin))
-# FFPE_Ox %>% ggvis(~Quarter_nice, ~COVERAGE_HOMOGENEITY) %>% layer_boxplots() %>% layer_points(fill = ~factor(BufferedFormalin))
-#FFPE_Ox %>% ggvis(~SampleCollectionDate, ~AT_DROP, fill = ~factor(BufferedFormalin)) %>% layer_smooths() %>% layer_points() %>% add_legend("fill", title = "Buffered Formalin") %>% scale_datetime("x", nice = "year")
 
 # By buffered formalin
 ggplot(FFPE_Ox, aes(x=Quarter_nice, y=AT_DROP, colour = BufferedFormalin)) + geom_boxplot() + geom_jitter() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Year/Quarter", y = "A/T Dropout")
 ggplot(FFPE_Ox, aes(x=Quarter_nice, y=COVERAGE_HOMOGENEITY, colour = BufferedFormalin)) + geom_boxplot() + geom_jitter() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Year/Quarter", y = "Unevenness of coverage")
+
 # By incubation time
 ggplot(FFPE_Ox, aes(x=Quarter_nice, y=AT_DROP, colour = OvernightIncubation)) + geom_boxplot() + geom_jitter() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Year/Quarter", y = "A/T Dropout")
 ggplot(FFPE_Ox, aes(x=Quarter_nice, y=COVERAGE_HOMOGENEITY, colour = OvernightIncubation)) + geom_boxplot() + geom_jitter() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Year/Quarter", y = "Unevenness of coverage ")
+
+############  List of sample IDs from Oxford with missing data ############  
+
+# No collection time (11)
+temp <- FFPE_Ox %>% filter(is.na(SampleCollectionDate)) %>% select(PATIENT_ID.x, SAMPLE_LAB_ID, SAMPLE_WELL_ID, SAMPLE_TYPE)
+names(temp)[1] <- "PATIENT_ID"
+write.csv(temp, file = "Oxford_samples_with_missing_Date.csv", row.names = F)
+
+
+# Collection date exists, but no fixative type (2)
+temp2 <- FFPE_data %>% filter(CENTER_CODE.x == "RTH", !is.na(SampleCollectionDate), typeOfFixative == "") %>% select(PATIENT_ID.x, SAMPLE_LAB_ID, SAMPLE_WELL_ID, SAMPLE_TYPE)
+names(temp2)[1] <- "PATIENT_ID"
+write.csv(temp2, file = "Oxford_samples_with_DateButnoFixType.csv", row.names = F)
+
+# Collection date exists, but no incubation time (2)
+temp3 <- FFPE_data %>% filter(CENTER_CODE.x == "RTH", !is.na(SampleCollectionDate), processingSchedule == "", typeOfFixative != "") %>% select(PATIENT_ID.x, SAMPLE_LAB_ID, SAMPLE_WELL_ID, SAMPLE_TYPE)
+names(temp3)[1] <- "PATIENT_ID"
+write.csv(temp3, file = "Oxford_samples_with_missingIncubationTime.csv", row.names = F)
+
+# Cleanup
+rm(temp, temp2, temp3)
 
 
