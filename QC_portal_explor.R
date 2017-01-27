@@ -229,3 +229,54 @@ write.csv(temp3, file = "Oxford_samples_with_missingIncubationTime.csv", row.nam
 rm(temp, temp2, temp3)
 
 
+############ Add missing Oxford data ############ 
+
+rm(list = ls())
+load("~/FFPE/QC_portal_explor_170125.RData")
+
+### Read and clean missing data
+missingOx <- read.csv("/Users/MartinaMijuskovic/Documents/FFPE/Oxford_samples_with_missing_data MC.csv", header = T)
+missingOx$Collection.date <- as.character(missingOx$Collection.date)
+names(missingOx)[5] <- "clinicSampleDateTime"
+names(missingOx)[6] <- "typeOfFixative"
+names(missingOx)[7] <- "processingSchedule"
+  
+### Add data to general FFPE table and subset for Oxford
+
+FFPE_data[FFPE_data$PATIENT_ID.x %in% missingOx$PATIENT_ID,]$clinicSampleDateTime <- missingOx[match(FFPE_data[FFPE_data$PATIENT_ID.x %in% missingOx$PATIENT_ID,]$PATIENT_ID.x, missingOx$PATIENT_ID),]$clinicSampleDateTime
+FFPE_data$typeOfFixative <- as.character(FFPE_data$typeOfFixative)
+missingOx$typeOfFixative <- as.character(missingOx$typeOfFixative)
+FFPE_data[FFPE_data$PATIENT_ID.x %in% missingOx$PATIENT_ID,]$typeOfFixative <- missingOx[match(FFPE_data[FFPE_data$PATIENT_ID.x %in% missingOx$PATIENT_ID,]$PATIENT_ID.x, missingOx$PATIENT_ID),]$typeOfFixative
+FFPE_data$processingSchedule <- as.character(FFPE_data$processingSchedule)
+missingOx$processingSchedule <- as.character(missingOx$processingSchedule)
+FFPE_data[FFPE_data$PATIENT_ID.x %in% missingOx$PATIENT_ID,]$processingSchedule <- missingOx[match(FFPE_data[FFPE_data$PATIENT_ID.x %in% missingOx$PATIENT_ID,]$PATIENT_ID.x, missingOx$PATIENT_ID),]$processingSchedule
+
+# Create "BufferedFormaline" flag
+FFPE_data$BufferedFormaline <- NA
+FFPE_data[grep("neutral", FFPE_data$typeOfFixative, ignore.case = T),]$BufferedFormaline <- 1
+FFPE_data[grep("nonbuffered", FFPE_data$typeOfFixative, ignore.case = T),]$BufferedFormaline <- 0
+FFPE_data[grep("saline", FFPE_data$typeOfFixative, ignore.case = T),]$BufferedFormaline <- 0
+names(FFPE_data)[74] <- "BufferedFormalin"
+
+# Create "OvernightIncubation" flag   ----> continue here
+FFPE_data$OvernightIncubation <- NA
+FFPE_data[grep("Extended", FFPE_data$processingSchedule, ignore.case = T),]$OvernightIncubation <- 0
+FFPE_data[grep("Overnight", FFPE_data$processingSchedule, ignore.case = T),]$OvernightIncubation <- 1
+
+# Oxford subset
+FFPE_Ox <- FFPE_data %>% filter(CENTER_CODE.x == "RTH")
+
+# Rename flags
+FFPE_Ox[is.na(FFPE_Ox$BufferedFormalin),]$BufferedFormalin <- "Unavailable"
+FFPE_Ox[FFPE_Ox$BufferedFormalin == 0,]$BufferedFormalin <- "Non-Buffered"
+FFPE_Ox[FFPE_Ox$BufferedFormalin == 1,]$BufferedFormalin <- "Buffered"
+
+FFPE_Ox[is.na(FFPE_Ox$OvernightIncubation),]$OvernightIncubation <- "Unavailable"
+FFPE_Ox[FFPE_Ox$OvernightIncubation == 0,]$OvernightIncubation <- "Extended"
+FFPE_Ox[FFPE_Ox$OvernightIncubation == 1,]$OvernightIncubation <- "Overnight"
+
+### Regenerate plots
+
+
+
+
