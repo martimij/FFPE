@@ -275,6 +275,12 @@ FFPE_Ox[is.na(FFPE_Ox$OvernightIncubation),]$OvernightIncubation <- "Unavailable
 FFPE_Ox[FFPE_Ox$OvernightIncubation == 0,]$OvernightIncubation <- "Extended"
 FFPE_Ox[FFPE_Ox$OvernightIncubation == 1,]$OvernightIncubation <- "Overnight"
 
+# Write the ID file
+write.csv(FFPE_Ox[,1:3], file = "Oxford_FFPE_IDs.csv", row.names = F)
+# Write the Fixation + ID file
+temp <- FFPE_Ox %>% select(PATIENT_ID.x, SAMPLE_LAB_ID, SAMPLE_WELL_ID, fixationStartDateTime, fixationEndDateTime, fixationComments)
+write.csv(temp, file = "Oxford_FFPE_fixationData.csv", row.names = F)
+
 ### Regenerate plots
 
 
