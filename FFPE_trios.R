@@ -10,9 +10,9 @@ library("ggplot2")
 
 rm(list=ls())
 
-############  Read and clean data (Jan 26 2017) ############  
+############  Read and clean data ############  
 
-# Read QC data for all cancer samples
+# Read QC data for all cancer samples ((Jan 26 2017))
 QC_portal <- read.csv("/Users/MartinaMijuskovic/Documents/FFPE/ready_to_upload.01-26-17.csv")
 
 # Summarize and check for dupliactes
@@ -85,6 +85,40 @@ trioIDs <- Alonas_trios %>% filter(ToUse == 1) %>% .$PATIENT_ID
 sum(trioIDs %in% QC_portal_trios$PATIENT_ID)  # 26 (all there)
 
 
+
+############   Add tumor type  ############  
+tumor_types <- read.table("/Users/MartinaMijuskovic/Documents/FFPE/cancer_disease_information_tum_2017-01-23_20-37-56.tsv", sep = "\t", header = T)
+QC_portal_trios$TumorType <- tumor_types[match(QC_portal_trios$PATIENT_ID, tumor_types$participant_identifiers_id),]$disease_type_id
+QC_portal_trios$TumorType <- as.character(QC_portal_trios$TumorType)
+
+# Fix the unknown tumor type (from missing Oxford data)
+missingTTid <- unique(QC_portal_trios %>% filter(TumorType == "Unknown") %>% .$PATIENT_ID)
+missingOx <- read.csv("/Users/MartinaMijuskovic/Documents/FFPE/Oxford_samples_with_missing_data MC.csv", header = T)
+QC_portal_trios[QC_portal_trios$PATIENT_ID == missingTTid,]$TumorType <- as.character(missingOx[missingOx$PATIENT_ID == missingTTid,]$X)
+
+
+
+############  Add BAM paths ############
+
+# Read the current upload report, restrict to cancer, V4 and qc_passed
+today <- Sys.Date()
+system(paste0("wget ", "https://upload-reports.gel.zone/upload_report.", today, ".txt"))
+upload <- read.table(paste0("upload_report.", today, ".txt"), sep = "\t")
+colnames(upload) <- as.character(fread(paste0("upload_report.", today, ".txt"), skip = 14, nrows = 1, header = F))
+upload <- upload %>% filter(`Delivery Version` == "V4", Status == "qc_passed", Type %in% c("cancer germline", "cancer tumour"))
+upload$Path <- as.character(upload$Path)
+
+# Add BAM paths to the trios table
+QC_portal_trios$BamPath <- upload[match(QC_portal_trios$SAMPLE_WELL_ID, upload$Platekey),]$Path
+
+
+# Write the trios QC portal data
+write.csv(QC_portal_trios, file = "QC_portal_trios.csv", quote = F, row.names = F)
+
+
+
+
+
 ############  Explore trios data ############
 
 # Distribution by GMC
@@ -102,10 +136,6 @@ ggplot(QC_portal_trios, aes(x=SAMPLE_TYPE, y=DEAMINATION_MISMATCHES_PER, colour 
 ggplot(QC_portal_trios, aes(x=SAMPLE_TYPE, y=AV_FRAGMENT_SIZE_BP, colour = CENTER_CODE)) + geom_boxplot() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Sample type", y = "Average Fragment Size")
 ggplot(QC_portal_trios, aes(x=SAMPLE_TYPE, y=MAPPING_RATE_PER, colour = CENTER_CODE)) + geom_boxplot() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Sample type", y = "Mapping Rate")
 
-# Add tumor type
-tumor_types <- read.table("/Users/MartinaMijuskovic/Documents/FFPE/cancer_disease_information_tum_2017-01-23_20-37-56.tsv", sep = "\t", header = T)
-QC_portal_trios$TumorType <- tumor_types[match(QC_portal_trios$PATIENT_ID, tumor_types$participant_identifiers_id),]$disease_type_id
-
 # Explore FFPE trio data by tumor type
 as.data.frame(table(as.character(QC_portal_trios[QC_portal_trios$SAMPLE_TYPE=="GL",]$CENTER_CODE), as.character(QC_portal_trios[QC_portal_trios$SAMPLE_TYPE=="GL",]$TumorType)), exclude = NULL)
 ggplot((QC_portal_trios %>% filter(SAMPLE_TYPE == "FFPE")), aes(x=TumorType, y=AT_DROP, colour = CENTER_CODE)) + geom_boxplot() + theme(panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Tumor type", y = "A/T Dropout")
@@ -113,5 +143,8 @@ ggplot((QC_portal_trios %>% filter(SAMPLE_TYPE == "FFPE")), aes(x=TumorType, y=C
 
 
 
-############  Check status of trios in the upload report ############  
+
+
+
+
 
