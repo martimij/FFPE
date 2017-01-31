@@ -319,3 +319,14 @@ FFPE_Ox %>% filter(BufferedFormalin == "Buffered") %>% ggvis(~SampleCollectionDa
 
 # Write the Oxford FFPE data table
 write.csv(FFPE_Ox, file = "Oxford_FFPE_samples_with_QCmetrics.csv", row.names = F)
+
+# FFPE samples from RYJ
+FFPE_data %>% filter(CENTER_CODE.x == "RYJ") %>% ggvis(~SampleCollectionDate, ~AT_DROP, fill = ~factor(BufferedFormalin), opacity := 0.7) %>% layer_points() %>% add_legend("fill", title = "Buffered Formalin") %>% scale_datetime("x", nice = "year")
+
+# Stats of Oxford vs other GMCs
+summary(FFPE_Ox %>% filter(BufferedFormalin == "Buffered") %>% .$COVERAGE_HOMOGENEITY)
+summary(FFPE_Ox %>% filter(BufferedFormalin == "Buffered") %>% .$AT_DROP)
+summary(QC_data %>% filter(CENTER_CODE != "RTH", SAMPLE_TYPE == "FFPE") %>% .$AT_DROP)
+summary(QC_data %>% filter(CENTER_CODE != "RTH", SAMPLE_TYPE == "FFPE") %>% .$COVERAGE_HOMOGENEITY)
+
+
