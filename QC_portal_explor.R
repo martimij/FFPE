@@ -131,7 +131,7 @@ dim(FFPE_data %>% filter(fixationStartDateTime != ""))  # 28
 dim(FFPE_data %>% filter(typeOfFixative != ""))  # 31
 dim(FFPE_data %>% filter(processingSchedule != ""))  # 30
 
-############  Summary, plots of OXFORD samples ############  
+############  Plots of OXFORD samples ############  
 
 # Samples with collection date, fixation start, formalin type and incubation time available
 dim(FFPE_data %>% filter(CENTER_CODE.x == "RTH", clinicSampleDateTime != ""))  # 30 
@@ -231,6 +231,8 @@ rm(temp, temp2, temp3)
 
 ############ Add missing Oxford data ############ 
 
+# Jan 31 2017: Re-do plot by adding missing data on sample collection, fixative type, length of fixation in formalin and tumor type
+
 rm(list = ls())
 load("~/FFPE/QC_portal_explor_170125.RData")
 
@@ -240,6 +242,7 @@ missingOx$Collection.date <- as.character(missingOx$Collection.date)
 names(missingOx)[5] <- "clinicSampleDateTime"
 names(missingOx)[6] <- "typeOfFixative"
 names(missingOx)[7] <- "processingSchedule"
+missingOx$clinicSampleDateTime <- as.character(as.Date(missingOx$clinicSampleDateTime, format = "%d/%m/%Y"))  # Fix date format
   
 ### Add data to general FFPE table and subset for Oxford
 
@@ -247,42 +250,72 @@ FFPE_data[FFPE_data$PATIENT_ID.x %in% missingOx$PATIENT_ID,]$clinicSampleDateTim
 FFPE_data$typeOfFixative <- as.character(FFPE_data$typeOfFixative)
 missingOx$typeOfFixative <- as.character(missingOx$typeOfFixative)
 FFPE_data[FFPE_data$PATIENT_ID.x %in% missingOx$PATIENT_ID,]$typeOfFixative <- missingOx[match(FFPE_data[FFPE_data$PATIENT_ID.x %in% missingOx$PATIENT_ID,]$PATIENT_ID.x, missingOx$PATIENT_ID),]$typeOfFixative
+# Do not use the processing schedule in the analysis because it relates to the time spent on the processor when embedding in wax, 
+# not total time in formalin
 FFPE_data$processingSchedule <- as.character(FFPE_data$processingSchedule)
 missingOx$processingSchedule <- as.character(missingOx$processingSchedule)
 FFPE_data[FFPE_data$PATIENT_ID.x %in% missingOx$PATIENT_ID,]$processingSchedule <- missingOx[match(FFPE_data[FFPE_data$PATIENT_ID.x %in% missingOx$PATIENT_ID,]$PATIENT_ID.x, missingOx$PATIENT_ID),]$processingSchedule
 
-# Create "BufferedFormaline" flag
-FFPE_data$BufferedFormaline <- NA
-FFPE_data[grep("neutral", FFPE_data$typeOfFixative, ignore.case = T),]$BufferedFormaline <- 1
-FFPE_data[grep("nonbuffered", FFPE_data$typeOfFixative, ignore.case = T),]$BufferedFormaline <- 0
-FFPE_data[grep("saline", FFPE_data$typeOfFixative, ignore.case = T),]$BufferedFormaline <- 0
+# Create "BufferedFormalin" flag
+FFPE_data$BufferedFormalin <- NA
+FFPE_data[grep("neutral", FFPE_data$typeOfFixative, ignore.case = T),]$BufferedFormalin <- 1
+FFPE_data[grep("nonbuffered", FFPE_data$typeOfFixative, ignore.case = T),]$BufferedFormalin <- 0
+FFPE_data[grep("saline", FFPE_data$typeOfFixative, ignore.case = T),]$BufferedFormalin <- 0
 names(FFPE_data)[74] <- "BufferedFormalin"
 
-# Create "OvernightIncubation" flag   ----> continue here
+# Create "OvernightIncubation" flag (do not use in the analysis, this relates to time on processor when embedding in wax)
 FFPE_data$OvernightIncubation <- NA
 FFPE_data[grep("Extended", FFPE_data$processingSchedule, ignore.case = T),]$OvernightIncubation <- 0
 FFPE_data[grep("Overnight", FFPE_data$processingSchedule, ignore.case = T),]$OvernightIncubation <- 1
 
-# Oxford subset
+# Make the Oxford subset and add time in formalin
 FFPE_Ox <- FFPE_data %>% filter(CENTER_CODE.x == "RTH")
 
+# Read the table with time in formalin
+timeFormalin_Ox <- read.csv("/Users/MartinaMijuskovic/Documents/FFPE/Oxford_timeInFormalin_extra_data.csv", header = T)
+
+# Add time in formalin and diagnosis
+FFPE_Ox$TimeInFormalinHours <- timeFormalin_Ox[match(FFPE_Ox$PATIENT_ID.x, timeFormalin_Ox$ParticipantID),]$TimeInFormalin.h.
+FFPE_Ox$InFormalinUnder36h <- timeFormalin_Ox[match(FFPE_Ox$PATIENT_ID.x, timeFormalin_Ox$ParticipantID),]$InFormalinUnder36h
+
 # Rename flags
-FFPE_Ox[is.na(FFPE_Ox$BufferedFormalin),]$BufferedFormalin <- "Unavailable"
+#FFPE_Ox[is.na(FFPE_Ox$BufferedFormalin),]$BufferedFormalin <- "Unavailable"  # No NAs
 FFPE_Ox[FFPE_Ox$BufferedFormalin == 0,]$BufferedFormalin <- "Non-Buffered"
 FFPE_Ox[FFPE_Ox$BufferedFormalin == 1,]$BufferedFormalin <- "Buffered"
 
-FFPE_Ox[is.na(FFPE_Ox$OvernightIncubation),]$OvernightIncubation <- "Unavailable"
-FFPE_Ox[FFPE_Ox$OvernightIncubation == 0,]$OvernightIncubation <- "Extended"
-FFPE_Ox[FFPE_Ox$OvernightIncubation == 1,]$OvernightIncubation <- "Overnight"
+FFPE_Ox[is.na(FFPE_Ox$InFormalinUnder36h),]$InFormalinUnder36h <- "Under 36h"  # They claim these are under 36h, although no data on actual h
+FFPE_Ox[FFPE_Ox$InFormalinUnder36h == 0,]$InFormalinUnder36h <- "Above 36h"
+FFPE_Ox[FFPE_Ox$InFormalinUnder36h == 1,]$InFormalinUnder36h <- "Under 36h"
 
-# Write the ID file
-write.csv(FFPE_Ox[,1:3], file = "Oxford_FFPE_IDs.csv", row.names = F)
-# Write the Fixation + ID file
-temp <- FFPE_Ox %>% select(PATIENT_ID.x, SAMPLE_LAB_ID, SAMPLE_WELL_ID, fixationStartDateTime, fixationEndDateTime, fixationComments)
-write.csv(temp, file = "Oxford_FFPE_fixationData.csv", row.names = F)
+# Add tumor type (Diagnosis)
+FFPE_Ox$Diagnosis <- timeFormalin_Ox[match(FFPE_Ox$PATIENT_ID.x, timeFormalin_Ox$ParticipantID),]$Diagnosis
 
-### Regenerate plots
+# Copy clean dates into SampleCollectionDate variable and convert to Date
+FFPE_Ox$SampleCollectionDate <- as.Date(FFPE_Ox$clinicSampleDateTime)
 
 
+############ Recreate Oxford plots ############ 
+
+# Plot Oxford samples by time grouped by buffered formalin
+FFPE_Ox %>% ggvis(~SampleCollectionDate, ~AT_DROP, fill = ~factor(BufferedFormalin), opacity := 0.7) %>% layer_points() %>% add_legend("fill", title = "Buffered Formalin") %>% scale_datetime("x", nice = "year")
+FFPE_Ox %>% ggvis(~SampleCollectionDate, ~COVERAGE_HOMOGENEITY, fill = ~factor(BufferedFormalin), opacity := 0.7) %>% layer_points() %>% add_legend("fill", title = "Buffered Formalin") %>% scale_datetime("x", nice = "year")
+
+# Plot Oxford samples by time grouped by formalin fixation time
+FFPE_Ox %>% ggvis(~SampleCollectionDate, ~AT_DROP, fill = ~factor(InFormalinUnder36h), opacity := 0.7) %>% layer_points() %>% add_legend("fill", title = "Formalin Fixation Time") %>% scale_datetime("x", nice = "year")
+FFPE_Ox %>% ggvis(~SampleCollectionDate, ~COVERAGE_HOMOGENEITY, fill = ~factor(InFormalinUnder36h), opacity := 0.7) %>% layer_points() %>% add_legend("fill", title = "Formalin Fixation Time") %>% scale_datetime("x", nice = "year")
+
+# Plot Oxford samples by tumor type grouped by buffered formalin
+FFPE_Ox %>% ggvis(~Diagnosis, ~AT_DROP, fill = ~factor(BufferedFormalin), opacity := 0.7) %>% layer_points() %>% add_legend("fill", title = "Buffered Formalin")
+FFPE_Ox %>% ggvis(~Diagnosis, ~COVERAGE_HOMOGENEITY, fill = ~factor(BufferedFormalin), opacity := 0.7) %>% layer_points() %>% add_legend("fill", title = "Buffered Formalin")
+
+# Plot Oxford samples by tumor type grouped by formalin fixation time
+FFPE_Ox %>% ggvis(~Diagnosis, ~AT_DROP, fill = ~factor(InFormalinUnder36h), opacity := 0.7) %>% layer_points() %>% add_legend("fill", title = "Formalin Fixation Time")
+FFPE_Ox %>% ggvis(~Diagnosis, ~COVERAGE_HOMOGENEITY, fill = ~factor(InFormalinUnder36h), opacity := 0.7) %>% layer_points() %>% add_legend("fill", title = "Formalin Fixation Time")
+
+# Plot buffered-only Oxford samples by time grouped by formalin fixation time
+FFPE_Ox %>% filter(BufferedFormalin == "Buffered") %>% ggvis(~SampleCollectionDate, ~AT_DROP, fill = ~factor(InFormalinUnder36h), opacity := 0.7) %>% layer_points() %>% add_legend("fill", title = "Formalin Fixation Time") %>% scale_datetime("x", nice = "year")
+FFPE_Ox %>% filter(BufferedFormalin == "Buffered") %>% ggvis(~SampleCollectionDate, ~COVERAGE_HOMOGENEITY, fill = ~factor(InFormalinUnder36h), opacity := 0.7) %>% layer_points() %>% add_legend("fill", title = "Formalin Fixation Time") %>% scale_datetime("x", nice = "year")
 
 
+# Write the Oxford FFPE data table
+write.csv(FFPE_Ox, file = "Oxford_FFPE_samples_with_QCmetrics.csv", row.names = F)
