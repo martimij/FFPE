@@ -8,6 +8,10 @@ library("ggvis")
 library("zoo")
 library("ggplot2")
 
+source("https://bioconductor.org/biocLite.R")
+biocLite("VariantAnnotation")
+library(VariantAnnotation)
+
 rm(list=ls())
 
 ############  Read and clean data ############  
@@ -143,7 +147,18 @@ ggplot((QC_portal_trios %>% filter(SAMPLE_TYPE == "FFPE")), aes(x=TumorType, y=C
 
 
 
+############  Explore SVs from VCF ############  
 
+ff_vcf <- readVcf(file = "/Users/MartinaMijuskovic/FFPE/LP3000067-DNA_E06_LP3000070-DNA_G01.somatic.SV.vcf.gz")
+ffpe_vcf <- readVcf(file = "/Users/MartinaMijuskovic/FFPE/LP3000067-DNA_E06_LP3000079-DNA_B02.somatic.SV.vcf.gz")
+
+# Filter data
+as.data.frame(table(ff_vcf@fixed@listData$FILTER))
+as.data.frame(table(ffpe_vcf@fixed@listData$FILTER))
+
+# SV types by filter
+t(table(ff_vcf@info@listData$SVTYPE, ff_vcf@fixed@listData$FILTER))
+t(table(ffpe_vcf@info@listData$SVTYPE, ffpe_vcf@fixed@listData$FILTER))
 
 
 
