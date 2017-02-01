@@ -329,4 +329,15 @@ summary(FFPE_Ox %>% filter(BufferedFormalin == "Buffered") %>% .$AT_DROP)
 summary(QC_data %>% filter(CENTER_CODE != "RTH", SAMPLE_TYPE == "FFPE") %>% .$AT_DROP)
 summary(QC_data %>% filter(CENTER_CODE != "RTH", SAMPLE_TYPE == "FFPE") %>% .$COVERAGE_HOMOGENEITY)
 
+# Boxplot for Oxford (buffered) vs all other centers (buffered, non-buffered or NA)
+box_data1 <- data.frame(AT_DROP = (FFPE_Ox %>% filter(BufferedFormalin == "Buffered") %>% .$AT_DROP), COVERAGE_HOMOGENEITY = (FFPE_Ox %>% filter(BufferedFormalin == "Buffered") %>% .$COVERAGE_HOMOGENEITY), GMC = "Oxford")
+box_data2 <- data.frame(AT_DROP = (QC_data %>% filter(CENTER_CODE != "RTH", SAMPLE_TYPE == "FFPE") %>% .$AT_DROP), COVERAGE_HOMOGENEITY = (QC_data %>% filter(CENTER_CODE != "RTH", SAMPLE_TYPE == "FFPE") %>% .$COVERAGE_HOMOGENEITY), GMC = "Other")
+box_data2 <- box_data2 %>% filter(!is.na(AT_DROP), !is.na(COVERAGE_HOMOGENEITY))
+box_data <- rbind(box_data1, box_data2)
+rm(box_data1, box_data2)
+# Plot AT dropout
+ggplot(box_data, aes(x=GMC, y=AT_DROP, colour = GMC)) + geom_boxplot() + geom_jitter() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "GMC", y = "A/T Dropout") 
+# Plot unevenness of coverage
+ggplot(box_data, aes(x=GMC, y=COVERAGE_HOMOGENEITY, colour = GMC)) + geom_boxplot() + geom_jitter() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "GMC", y = "Unevenness of Coverage")
+
 
