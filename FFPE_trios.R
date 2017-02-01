@@ -5,7 +5,6 @@
 library("data.table")
 library("dplyr")
 library("ggvis")
-library("zoo")
 library("ggplot2")
 
 source("https://bioconductor.org/biocLite.R")
@@ -146,8 +145,10 @@ ggplot((QC_portal_trios %>% filter(SAMPLE_TYPE == "FFPE")), aes(x=TumorType, y=A
 ggplot((QC_portal_trios %>% filter(SAMPLE_TYPE == "FFPE")), aes(x=TumorType, y=COVERAGE_HOMOGENEITY, colour = CENTER_CODE)) + geom_boxplot() + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank()) + labs(x = "Tumor type", y = "Unevenness of Coverage")
 
 
-
 ############  Explore SVs from VCF ############  
+
+# Load trios QC data
+QC_portal_trios <- read.csv("QC_portal_trios.csv")
 
 ff_vcf <- readVcf(file = "/Users/MartinaMijuskovic/FFPE/LP3000067-DNA_E06_LP3000070-DNA_G01.somatic.SV.vcf.gz")
 ffpe_vcf <- readVcf(file = "/Users/MartinaMijuskovic/FFPE/LP3000067-DNA_E06_LP3000079-DNA_B02.somatic.SV.vcf.gz")
@@ -157,8 +158,77 @@ as.data.frame(table(ff_vcf@fixed@listData$FILTER))
 as.data.frame(table(ffpe_vcf@fixed@listData$FILTER))
 
 # SV types by filter
-t(table(ff_vcf@info@listData$SVTYPE, ff_vcf@fixed@listData$FILTER))
-t(table(ffpe_vcf@info@listData$SVTYPE, ffpe_vcf@fixed@listData$FILTER))
+t(table(ff_vcf@info@listData$SVTYPE, ff_vcf@fixed@listData$FILTER, exclude = NULL))
+t(table(ffpe_vcf@info@listData$SVTYPE, ffpe_vcf@fixed@listData$FILTER, exclude = NULL))
+
+
+
+############  Compare CANVAS CNVs ############  
+
+### FF
+# Extract INFO table (all SVs)
+SVinfo_ff <- as.data.frame(info(ff_vcf))
+# Add filter field
+SVinfo_ff$FILTER <- rowRanges(ff_vcf)$FILTER
+# Create Application variable (Canvas or Manta?)
+SVinfo_ff$Application <- ""
+SVinfo_ff[grepl("Canvas", rownames(SVinfo_ff)),]$Application <- "Canvas"
+SVinfo_ff[grepl("Manta", rownames(SVinfo_ff)),]$Application <- "Manta"
+# Extract ID
+SVinfo_ff$ID <- rownames(SVinfo_ff)
+
+# table((SVinfo_ff %>% filter(FILTER == "PASS") %>% .$SOMATIC), (SVinfo_ff %>% filter(FILTER == "PASS") %>% .$Application))
+######## WARNING !!!
+# Do not use the "SOMATIC" field to filter CANVAS variants - they are all set to FALSE 
+# as this field does not exist in the Canvas VCF entries. 
+# Manta entries are all set to TRUE so the field is actually useless.
+
+# Remove filtered entries, keep Canvas only
+Canvas_ff <- SVinfo_ff %>% filter(FILTER == "PASS", Application == "Canvas")  # 59 
+
+# Extract chr, start, end
+Canvas_ff$Chr <- sapply(1:dim(Canvas_ff)[1], function(x){strsplit(Canvas_ff$ID[x], split = ":")[[1]][3]})
+Canvas_ff$Start <-  sapply(1:dim(Canvas_ff)[1], function(x){strsplit(Canvas_ff$ID[x], split = ":")[[1]][4]})
+Canvas_ff$End <-  sapply(1:dim(Canvas_ff)[1], function(x){strsplit(Canvas_ff$ID[x], split = ":")[[1]][5]})
+Canvas_ff$Type <-  sapply(1:dim(Canvas_ff)[1], function(x){strsplit(Canvas_ff$ID[x], split = ":")[[1]][2]})
+
+# Distribution of types
+table(Canvas_ff$Type)  # Only 5 loss, and 54 REF (What is "REF"???? Non-somatic???)
+
+
+### FFPE
+# Extract INFO table (all SVs)
+SVinfo_ffpe <- as.data.frame(info(ffpe_vcf))
+# Add filter field
+SVinfo_ffpe$FILTER <- rowRanges(ffpe_vcf)$FILTER
+# Create Application variable (Canvas or Manta?)
+SVinfo_ffpe$Application <- ""
+SVinfo_ffpe[grepl("Canvas", rownames(SVinfo_ffpe)),]$Application <- "Canvas"
+SVinfo_ffpe[grepl("Manta", rownames(SVinfo_ffpe)),]$Application <- "Manta"
+
+# Extract ID
+SVinfo_ffpe$ID <- rownames(SVinfo_ffpe)
+
+# Remove filtered entries, keep Canvas only
+Canvas_ffpe <- SVinfo_ffpe %>% filter(FILTER == "PASS", Application == "Canvas")  # 54
+
+# Extract chr, start, end
+Canvas_ffpe$Chr <- sapply(1:dim(Canvas_ffpe)[1], function(x){strsplit(Canvas_ffpe$ID[x], split = ":")[[1]][3]})
+Canvas_ffpe$Start <-  sapply(1:dim(Canvas_ffpe)[1], function(x){strsplit(Canvas_ffpe$ID[x], split = ":")[[1]][4]})
+Canvas_ffpe$End <-  sapply(1:dim(Canvas_ffpe)[1], function(x){strsplit(Canvas_ffpe$ID[x], split = ":")[[1]][5]})
+Canvas_ffpe$Type <-  sapply(1:dim(Canvas_ffpe)[1], function(x){strsplit(Canvas_ffpe$ID[x], split = ":")[[1]][2]})
+
+# Distribution of types
+table(Canvas_ffpe$Type)  # Only 7 loss, and 47 REF (What is "REF"???? Non-somatic??? Or Ns?)
+
+### Compare ff and ffpe
+Canvas_ff %>% filter(Type == "LOSS") %>% dplyr::select(ID, Chr, Start, End, Type)
+Canvas_ffpe %>% filter(Type == "LOSS") %>% dplyr::select(ID, Chr, Start, End, Type)
+
+# Create an overlap table and calculate % overlap with FF
+
+
+
 
 
 
