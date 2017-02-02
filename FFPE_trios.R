@@ -150,8 +150,8 @@ ggplot((QC_portal_trios %>% filter(SAMPLE_TYPE == "FFPE")), aes(x=TumorType, y=C
 # Load trios QC data
 QC_portal_trios <- read.csv("QC_portal_trios.csv")
 
-ff_vcf <- readVcf(file = "/Users/MartinaMijuskovic/FFPE/LP3000067-DNA_E06_LP3000070-DNA_G01.somatic.SV.vcf.gz")
-ffpe_vcf <- readVcf(file = "/Users/MartinaMijuskovic/FFPE/LP3000067-DNA_E06_LP3000079-DNA_B02.somatic.SV.vcf.gz")
+ff_vcf <- readVcf(file = "/Users/MartinaMijuskovic/FFPE/Trio_VCFs/LP3000067-DNA_E06_LP3000070-DNA_G01.somatic.SV.vcf.gz")
+ffpe_vcf <- readVcf(file = "/Users/MartinaMijuskovic/FFPE/Trio_VCFs/LP3000067-DNA_E06_LP3000079-DNA_B02.somatic.SV.vcf.gz")
 
 # Filter data
 as.data.frame(table(ff_vcf@fixed@listData$FILTER))
@@ -195,6 +195,9 @@ Canvas_ff$Type <-  sapply(1:dim(Canvas_ff)[1], function(x){strsplit(Canvas_ff$ID
 # Distribution of types
 table(Canvas_ff$Type)  # Only 5 loss, and 54 REF (What is "REF"???? Non-somatic???)
 
+# Keep LOSS/GAIN only
+Canvas_ff <- Canvas_ff %>% filter(Type %in% c("LOSS", "GAIN"))  # 5
+
 
 ### FFPE
 # Extract INFO table (all SVs)
@@ -209,7 +212,7 @@ SVinfo_ffpe[grepl("Manta", rownames(SVinfo_ffpe)),]$Application <- "Manta"
 # Extract ID
 SVinfo_ffpe$ID <- rownames(SVinfo_ffpe)
 
-# Remove filtered entries, keep Canvas only
+# Remove filtered entries, keep Canvas only, keep LOSS,GAIN only
 Canvas_ffpe <- SVinfo_ffpe %>% filter(FILTER == "PASS", Application == "Canvas")  # 54
 
 # Extract chr, start, end
@@ -221,15 +224,72 @@ Canvas_ffpe$Type <-  sapply(1:dim(Canvas_ffpe)[1], function(x){strsplit(Canvas_f
 # Distribution of types
 table(Canvas_ffpe$Type)  # Only 7 loss, and 47 REF (What is "REF"???? Non-somatic??? Or Ns?)
 
+# Keep LOSS/GAIN only
+Canvas_ffpe <- Canvas_ffpe %>% filter(Type %in% c("LOSS", "GAIN"))  # 7
+
+
 ### Compare ff and ffpe
-Canvas_ff %>% filter(Type == "LOSS") %>% dplyr::select(ID, Chr, Start, End, Type)
-Canvas_ffpe %>% filter(Type == "LOSS") %>% dplyr::select(ID, Chr, Start, End, Type)
 
-# Create an overlap table and calculate % overlap with FF
+# List SVs
+Canvas_ff %>% dplyr::select(ID, Chr, Start, End, Type)
+Canvas_ffpe %>% dplyr::select(ID, Chr, Start, End, Type)
+
+# Add new type coding ("+" is gain, "-" is loss)
+Canvas_ff$Type2 <- NA
+Canvas_ff$Type2 <- sapply(1:dim(Canvas_ff)[1], function(x){
+                    if (Canvas_ff$Type[x] == "LOSS") {Canvas_ff$Type2[x] <- "-"}
+                    else if (Canvas_ff$Type[x] == "GAIN") {Canvas_ff$Type2[x] <- "+"}
+                    })
+# Add new type coding ("+" is gain, "-" is loss)
+Canvas_ffpe$Type2 <- NA
+Canvas_ffpe$Type2 <- sapply(1:dim(Canvas_ffpe)[1], function(x){
+  if (Canvas_ffpe$Type[x] == "LOSS") {Canvas_ffpe$Type2[x] <- "-"}
+  else if (Canvas_ffpe$Type[x] == "GAIN") {Canvas_ffpe$Type2[x] <- "+"}
+})
+
+# Make bed files to find number of overlapping and non-overlapping bases (with bedtools)
+ff_bed <- Canvas_ff %>% dplyr::select(Chr, Start, End, ID)
+ff_bed$Score <- ""
+ff_bed <- cbind(ff_bed, (Canvas_ff %>% dplyr::select(Type2)))
+ffpe_bed <- Canvas_ffpe %>% dplyr::select(Chr, Start, End, ID)
+ffpe_bed$Score <- ""
+ffpe_bed <- cbind(ffpe_bed, (Canvas_ffpe %>% dplyr::select(Type2)))
+
+# Write bed files indicating gain as "+" strand and loss as "-" strand (to enable comparing them at once in bedtools)
+write.table(ff_bed, file = "ff.bed", quote = F, row.names = F, col.names = F, sep = "\t")
+write.table(ffpe_bed, file = "ffpe.bed", quote = F, row.names = F, col.names = F, sep = "\t")
+
+# Call bedtools to get FFPE overlap with FF
+system('bedtools coverage -s -a ff.bed -b ffpe.bed > ff_overlap.bed', intern = T)
+ff_overlap <- read.table("ff_overlap.bed", sep = "\t")
+names(ff_overlap) <- c(names(ff_bed), "NumOverlap", "BPoverlap", "BPTotal", "PCT")
+
+# Call bedtools to get FF overlap with FFPE
+system('bedtools coverage -s -a ffpe.bed -b ff.bed > ffpe_overlap.bed', intern = T)
+ffpe_overlap <- read.table("ffpe_overlap.bed", sep = "\t")
+names(ffpe_overlap) <- c(names(ff_bed), "NumOverlap", "BPoverlap", "BPTotal", "PCT")
+
+# Final summary
+sum(ff_overlap$BPoverlap)  # Total CNV BP from FF that are also seen in FFPE
+sum(ff_overlap$BPTotal)  # Total CNV BP in FF
+sum(ff_overlap$BPoverlap) / sum(ff_overlap$BPTotal) # Percent recall
+sum(ff_overlap$BPTotal) - sum(ff_overlap$BPoverlap) # CNV BP in FF not seen in FFPE (false negatives?)
+sum(ffpe_overlap$BPTotal) - sum(ffpe_overlap$BPoverlap)  # SNV BP in FFPE not seen in FFPE (false positives?)
+
+# Summary table
+result <- data.frame(PATIENT_ID = "217000028", PERCENT_RECALL = sum(ff_overlap$BPoverlap) / sum(ff_overlap$BPTotal), BP_OVERLAP = sum(ff_overlap$BPoverlap), BP_FF_ONLY = (sum(ff_overlap$BPTotal) - sum(ff_overlap$BPoverlap)), BP_FFPE_ONLY = (sum(ffpe_overlap$BPTotal) - sum(ffpe_overlap$BPoverlap)))
 
 
+############  Functions ############  
 
+# Function that compares CNVs from FFPE trios (VCFs copied locally)
 
+compareCNV <- function(PATIENT_ID){
+  
+}
 
+#### CONTINUE HERE
 
-
+# There was a BAM path missing in my table, because the upload report status is qc_failed (FFPE sample LP3000079-DNA_H01)
+# It was apparently analysed even though it's failed?
+upload %>% filter(Platekey == "LP3000079-DNA_H01")
