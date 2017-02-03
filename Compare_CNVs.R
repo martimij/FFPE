@@ -16,6 +16,7 @@ QC_portal_trios$VCF_path <- as.character(sapply(QC_portal_trios$BamPath, functio
   system(command, intern = T)
 }))
 
+<<<<<<< HEAD
 # # # Test get VCF paths
 # dummy_bam_path <- "/Users/MartinaMijuskovic/FFPE/Trio_VCFs/"
 # QC_portal_trios2 <- QC_portal_trios %>% filter(SAMPLE_WELL_ID %in% c("LP2000906-DNA_A02", "LP2000907-DNA_B01", "LP3000070-DNA_G01", "LP3000079-DNA_B02"))
@@ -26,6 +27,19 @@ QC_portal_trios$VCF_path <- as.character(sapply(QC_portal_trios$BamPath, functio
 # QC_portal_trios2$VCF_path <- QC_portal_trios2$VCF_path[1:4]
 
 # Function that compares CNVs from FFPE trios (VCFs copied locally)
+=======
+# # Test get VCF paths
+dummy_bam_path <- "/Users/MartinaMijuskovic/FFPE/Trio_VCFs/"
+QC_portal_trios2 <- QC_portal_trios %>% filter(SAMPLE_WELL_ID %in% c("LP2000906-DNA_A02", "LP2000907-DNA_B01", "LP3000070-DNA_G01", "LP3000079-DNA_B02"))
+QC_portal_trios2$VCF_path <- sapply(rep(dummy_bam_path, 4), function(x){
+  command <- paste("find", x, "-iname *.SV.vcf.gz", sep = " ")
+  system(command, intern = T)
+})
+QC_portal_trios2$VCF_path <- QC_portal_trios2$VCF_path[1:4]
+
+# Function that compares CNVs from FFPE trios (VCFs copied locally)
+
+>>>>>>> 775483df6c951699042bffdf0dd2a6fac8950712
 compareCNV <- function(patientID){
   
   # Get FF and FFPE VCF paths for specified patient ID and read into a Large CollapsedVCF object (VariantAnnotation package)
@@ -118,16 +132,23 @@ compareCNV <- function(patientID){
 }
 
 # Get all patient IDs
+<<<<<<< HEAD
 patientIDs <- unique(QC_portal_trios$PATIENT_ID)
+=======
+patientIDs <- unique(QC_portal_trios2$PATIENT_ID)
+>>>>>>> 775483df6c951699042bffdf0dd2a6fac8950712
 
 # Run CNV comparison for each patient ID
 CNV_summary <- lapply(patientIDs, compareCNV)
 names(CNV_summary) <- patientIDs
+<<<<<<< HEAD
 # Convert to data.frame --- continue here
 
 # Write the output table
 
 
+=======
+>>>>>>> 775483df6c951699042bffdf0dd2a6fac8950712
 
 # ### Test function locally
 # 
