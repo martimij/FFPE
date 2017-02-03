@@ -1,6 +1,7 @@
 # Martina Mijuskovic
 # FFPE project
 # Collect QC and clinical data for sequenced FFPE trios
+# Develop the comparison method for Canvas CNV output between FF and FFPE samples
 
 library("data.table")
 library("dplyr")
@@ -114,6 +115,9 @@ upload$Path <- as.character(upload$Path)
 # Add BAM paths to the trios table
 QC_portal_trios$BamPath <- upload[match(QC_portal_trios$SAMPLE_WELL_ID, upload$Platekey),]$Path
 
+# Manually add the BAM path for one sample (FFPE from 217000030, LP3000079-DNA_H01) - passes QC in v2 but not in v4, we are keeping it
+#upload %>% filter(Platekey == "LP3000079-DNA_H01") # Chose v4 path from unfiltered upload report
+QC_portal_trios[QC_portal_trios$SAMPLE_WELL_ID == "LP3000079-DNA_H01",]$BamPath <- "/genomes/by_date/2016-12-13/CANCP40747/CancerLP3000079-DNA_H01_NormalLP3000067-DNA_H08"
 
 # Write the trios QC portal data
 write.csv(QC_portal_trios, file = "QC_portal_trios.csv", quote = F, row.names = F)
@@ -269,27 +273,14 @@ system('bedtools coverage -s -a ffpe.bed -b ff.bed > ffpe_overlap.bed', intern =
 ffpe_overlap <- read.table("ffpe_overlap.bed", sep = "\t")
 names(ffpe_overlap) <- c(names(ff_bed), "NumOverlap", "BPoverlap", "BPTotal", "PCT")
 
-# Final summary
-sum(ff_overlap$BPoverlap)  # Total CNV BP from FF that are also seen in FFPE
-sum(ff_overlap$BPTotal)  # Total CNV BP in FF
-sum(ff_overlap$BPoverlap) / sum(ff_overlap$BPTotal) # Percent recall
-sum(ff_overlap$BPTotal) - sum(ff_overlap$BPoverlap) # CNV BP in FF not seen in FFPE (false negatives?)
-sum(ffpe_overlap$BPTotal) - sum(ffpe_overlap$BPoverlap)  # SNV BP in FFPE not seen in FFPE (false positives?)
-
 # Summary table
-result <- data.frame(PATIENT_ID = "217000028", PERCENT_RECALL = sum(ff_overlap$BPoverlap) / sum(ff_overlap$BPTotal), BP_OVERLAP = sum(ff_overlap$BPoverlap), BP_FF_ONLY = (sum(ff_overlap$BPTotal) - sum(ff_overlap$BPoverlap)), BP_FFPE_ONLY = (sum(ffpe_overlap$BPTotal) - sum(ffpe_overlap$BPoverlap)))
+result <- data.frame(PATIENT_ID = "217000028", PERCENT_RECALL_FF = sum(ff_overlap$BPoverlap) / sum(ff_overlap$BPTotal), PERCENT_RECALL_FFPE = sum(ffpe_overlap$BPoverlap) / sum(ffpe_overlap$BPTotal), BP_OVERLAP = sum(ff_overlap$BPoverlap), BP_FF_ONLY = (sum(ff_overlap$BPTotal) - sum(ff_overlap$BPoverlap)), BP_FFPE_ONLY = (sum(ffpe_overlap$BPTotal) - sum(ffpe_overlap$BPoverlap)))
 
 
-############  Functions ############  
 
-# Function that compares CNVs from FFPE trios (VCFs copied locally)
+# Write BAM paths into a file so I can copy the VCFs locally (not used)
+#write.table(QC_portal_trios$BamPath, file = "FFPEtrio_bamPaths.txt", quote = F, row.names = F, col.names = F)
 
-compareCNV <- function(PATIENT_ID){
-  
-}
 
-#### CONTINUE HERE
 
-# There was a BAM path missing in my table, because the upload report status is qc_failed (FFPE sample LP3000079-DNA_H01)
-# It was apparently analysed even though it's failed?
-upload %>% filter(Platekey == "LP3000079-DNA_H01")
+
