@@ -15,6 +15,8 @@
 library(dplyr)
 library(VariantAnnotation)
 library(ggplot2)
+library(reshape)
+library(scales)
 
 setwd("/home/mmijuskovic/FFPE/CNV_trio_comparison")
 
@@ -147,6 +149,25 @@ names(QC_table)[4:11] <- paste0("FFPE_", names(QC_table)[4:11])
 QC_table <- left_join(QC_table, (QC_portal_trios %>% filter(SAMPLE_TYPE == "FF") %>% select(PATIENT_ID, SAMPLE_WELL_ID, LIBRARY_TYPE, TUMOUR_PURITY, GC_DROP, AT_DROP, COVERAGE_HOMOGENEITY, CHIMERIC_PER, AV_FRAGMENT_SIZE_BP, MAPPING_RATE_PER)), by = "PATIENT_ID")
 names(QC_table)[12:20] <- paste0("FF_", names(QC_table)[12:20])
 CNV_summary <- left_join(CNV_summary, QC_table, by = "PATIENT_ID")
+
+# Calculate normalized overlap
+CNV_summary$BP_OVERLAP <- as.numeric(CNV_summary$BP_OVERLAP)
+CNV_summary$BP_FF_ONLY <- as.numeric(CNV_summary$BP_FF_ONLY)
+CNV_summary$BP_FFPE_ONLY <- as.numeric(CNV_summary$BP_FFPE_ONLY)
+CNV_summary$TOTAL_BP <- CNV_summary$BP_OVERLAP + CNV_summary$BP_FF_ONLY + CNV_summary$BP_FFPE_ONLY
+
+# Write the full table
+write.csv(CNV_summary, file = paste0("Full_CNV_summary_", today, ".csv"), row.names = F, quote = F)
+
+# Barplots of overlapping and unique bp (normalized) for all 26 trios (ordered) --- continue here
+# First recast the data (each of 3 bp values in separate row, with PATIENT_ID, with indexes 1-2-3), needs package "reshape"
+CNV_summary_m <- as.data.frame(t(CNV_summary %>% select(PATIENT_ID, BP_OVERLAP, BP_FF_ONLY, BP_FFPE_ONLY)))
+names(CNV_summary_m) <- CNV_summary_m[1,]
+CNV_summary_m <- CNV_summary_m[2:4,]
+CNV_summary_m <- melt(cbind(CNV_summary_m, ind = rownames(CNV_summary_m)), id.vars = c('ind'))
+
+# Plot (needs package "scales")
+ggplot(CNV_summary_m,aes(x = variable, y = value, fill = ind)) + geom_bar(position = "fill",stat = "identity") + scale_y_continuous(labels = percent_format()) + theme(axis.text.x=element_text(angle=45,hjust=1,vjust=0.5)) + theme(legend.title=element_blank()) + labs(x = "Patient ID", y = element_blank())
 
 # Recall of FF vs recall of FFPE
 ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = PERCENT_RECALL_FFPE)) + geom_jitter() + geom_smooth(method = "lm") + labs(x = "Percent Recall of FF", y = "Percent Recall of FFPE") 
