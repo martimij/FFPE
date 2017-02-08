@@ -18,17 +18,18 @@ library(ggplot2)
 library(reshape)
 library(scales)
 
+# Working directory on the HPC
 setwd("/home/mmijuskovic/FFPE/CNV_trio_comparison")
 
 today <- Sys.Date()
 
-# Load the manifest
+# Load the manifest (HPC)
 QC_portal_trios <- read.csv("/home/mmijuskovic/FFPE/CNV_trio_comparison/QC_portal_trios.csv")
 
 # Subset for FF and FFPE samples
 QC_portal_trios <- QC_portal_trios %>% filter(SAMPLE_TYPE %in% c("FF", "FFPE"))
 
-# Get VCF paths
+# Get VCF paths (HPC)
 QC_portal_trios$VCF_path <- as.character(sapply(QC_portal_trios$BamPath, function(x){
   command <- paste("find", paste0(x, "/SomaticVariations"), "-iname *.SV.vcf.gz", sep = " ")
   system(command, intern = T)
@@ -138,10 +139,12 @@ CNV_summary$PATIENT_ID <- patientIDs
 # Write out the resulting table
 write.csv(CNV_summary, file = paste0("CNV_summary_", today, ".csv"), row.names = F, quote = F)
 
-# Read the result table
+# Read the result table (local copy)
 #CNV_summary <- read.csv(paste0("CNV_summary_", today, ".csv"))
 
-### Create plots
+
+
+### Put all data together (QC, CNV)
 
 # Add QC details to the CNV summary table
 QC_table <- QC_portal_trios %>% filter(SAMPLE_TYPE == "FFPE") %>% select(PATIENT_ID, CENTER_CODE, TumorType, SAMPLE_WELL_ID, TUMOUR_PURITY, GC_DROP, AT_DROP, COVERAGE_HOMOGENEITY, CHIMERIC_PER, AV_FRAGMENT_SIZE_BP, MAPPING_RATE_PER)
@@ -159,59 +162,91 @@ CNV_summary$TOTAL_BP <- CNV_summary$BP_OVERLAP + CNV_summary$BP_FF_ONLY + CNV_su
 # Write the full table
 write.csv(CNV_summary, file = paste0("Full_CNV_summary_", today, ".csv"), row.names = F, quote = F)
 
-# Barplots of overlapping and unique bp (normalized) for all 26 trios (ordered) --- continue here
+
+
+### Create plots
+
+# Blank theme
+blank <-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank())
+# Black regression line (linear model)
+regr_line <- geom_smooth(method = "lm", se = F, aes(group = 1), linetype = 2, col = "black", size = 0.5)
+
+# Barplots of overlapping and unique bp (normalized) for all 26 trios
 # First recast the data (each of 3 bp values in separate row, with PATIENT_ID, with indexes 1-2-3), needs package "reshape"
 CNV_summary_m <- as.data.frame(t(CNV_summary %>% select(PATIENT_ID, BP_OVERLAP, BP_FF_ONLY, BP_FFPE_ONLY)))
 names(CNV_summary_m) <- CNV_summary_m[1,]
 CNV_summary_m <- CNV_summary_m[2:4,]
 CNV_summary_m <- melt(cbind(CNV_summary_m, ind = rownames(CNV_summary_m)), id.vars = c('ind'))
-
 # Plot (needs package "scales")
-ggplot(CNV_summary_m,aes(x = variable, y = value, fill = ind)) + geom_bar(position = "fill",stat = "identity") + scale_y_continuous(labels = percent_format()) + theme(axis.text.x=element_text(angle=45,hjust=1,vjust=0.5)) + theme(legend.title=element_blank()) + labs(x = "Patient ID", y = element_blank())
+ggplot(CNV_summary_m,aes(x = variable, y = value, fill = ind)) + geom_bar(position = "fill",stat = "identity") + scale_y_continuous(labels = percent_format()) + theme(axis.text.x=element_text(angle=45,hjust=1,vjust=1), axis.title = element_blank()) + theme(legend.title=element_blank()) + labs(x = "Patient ID", y = element_blank()) + blank
 
 # Recall of FF vs recall of FFPE
-ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = PERCENT_RECALL_FFPE)) + geom_jitter() + geom_smooth(method = "lm") + labs(x = "Percent Recall of FF", y = "Percent Recall of FFPE") 
+ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = PERCENT_RECALL_FFPE)) + geom_jitter() + geom_smooth(method = "lm", se = T) + labs(x = "Percent Recall of FF", y = "Percent Recall of FFPE") 
+# Spearman correlation coefficient
+cor(CNV_summary$PERCENT_RECALL_FF, CNV_summary$PERCENT_RECALL_FFPE, method = "spearman")  #  0.5186325
 
-# Recall of FF by AT dropout/coverage homogeneity of FFPE, colored by center
-ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = FFPE_AT_DROP, col = factor(CENTER_CODE))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "FFPE AT Dropout") + theme(legend.title=element_blank())
-ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = FFPE_COVERAGE_HOMOGENEITY, col = factor(CENTER_CODE))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "FFPE Unevenness of Coverage") + theme(legend.title=element_blank())
-
+# RECALL of FF by AT dropout/coverage homogeneity, chim reads, mapping rate of FFPE, colored by center
+ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = FFPE_AT_DROP, col = factor(CENTER_CODE))) + geom_jitter() + regr_line + labs(x = "Percent Recall of FF", y = "FFPE AT Dropout") + theme(legend.title=element_blank())
+cor(CNV_summary$PERCENT_RECALL_FF, CNV_summary$FFPE_AT_DROP, method = "spearman")  # 0.1863566
+ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = FFPE_COVERAGE_HOMOGENEITY, col = factor(CENTER_CODE))) + geom_jitter() + regr_line + labs(x = "Percent Recall of FF", y = "FFPE Unevenness of Coverage") + theme(legend.title=element_blank())
+cor(CNV_summary$PERCENT_RECALL_FF, CNV_summary$FFPE_COVERAGE_HOMOGENEITY, method = "spearman")  # -0.05025641
+ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = FFPE_CHIMERIC_PER, col = factor(CENTER_CODE))) + geom_jitter() + regr_line + labs(x = "Percent Recall of FF", y = "FFPE % Chimeric") + theme(legend.title=element_blank())
+cor(CNV_summary$PERCENT_RECALL_FF, CNV_summary$FFPE_CHIMERIC_PER, method = "spearman")  # 0.1108261
+ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = FFPE_MAPPING_RATE_PER, col = factor(CENTER_CODE))) + geom_jitter() + regr_line + labs(x = "Percent Recall of FF", y = "FFPE Mapping Rate") + theme(legend.title=element_blank())
+cor(CNV_summary$PERCENT_RECALL_FF, CNV_summary$FFPE_MAPPING_RATE_PER, method = "spearman")  # -0.1432479
 # Recall of FF by AT dropout of FFPE, colored by tumor type
 ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = FFPE_AT_DROP, col = factor(TumorType))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "FFPE AT Dropout") + theme(legend.title=element_blank())
 ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = FFPE_COVERAGE_HOMOGENEITY, col = factor(TumorType))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "FFPE Unevenness of Coverage") + theme(legend.title=element_blank())
-
 # Recall by tumor purity
-ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = FFPE_TUMOUR_PURITY, col = factor(TumorType))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "FFPE Tumour Purity")  + theme(legend.title=element_blank())
-ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = FF_TUMOUR_PURITY, col = factor(TumorType))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "FF Tumour Purity")  + theme(legend.title=element_blank())
+ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = FFPE_TUMOUR_PURITY, col = factor(TumorType))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "FFPE Tumour Purity")  + theme(legend.title=element_blank()) + regr_line
+cor(CNV_summary$PERCENT_RECALL_FF, CNV_summary$FFPE_TUMOUR_PURITY, method = "spearman")  # 0.2920236
+ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = FF_TUMOUR_PURITY, col = factor(TumorType))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "FF Tumour Purity")  + theme(legend.title=element_blank()) + regr_line
+cor(CNV_summary$PERCENT_RECALL_FF, CNV_summary$FF_TUMOUR_PURITY, method = "spearman")  # 0.373867
 # Recall by difference in tumor purity between FF and FFPE
 CNV_summary$PurityDiff <- CNV_summary$FFPE_TUMOUR_PURITY-CNV_summary$FF_TUMOUR_PURITY
 ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = PurityDiff, col = factor(TumorType))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "Difference In Tumour Purity")  + theme(legend.title=element_blank())
 ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = FFPE_AT_DROP, col = factor(PurityDiff > 15))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "FFPE AT Dropout")  + theme(legend.title=element_blank())
-
 # Recall by high vs low FF and FFPE purity (both > 50)
 ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = FFPE_AT_DROP, col = factor((FFPE_TUMOUR_PURITY > 50) & (FF_TUMOUR_PURITY > 50)))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "FFPE AT Dropout") + theme(legend.title=element_blank())
-
 # Divide samples into good and bad FF recall (>50%), see which variables make a difference
 ggplot(data=CNV_summary, aes(x=(PERCENT_RECALL_FF>0.5), y=FFPE_AT_DROP, fill=(PERCENT_RECALL_FF>0.5))) + geom_boxplot() + geom_jitter() + labs(x = "High FF CNV Recall (>50%)", y = "FFPE AT Dropout") + theme(legend.title=element_blank())
 ggplot(data=CNV_summary, aes(x=(PERCENT_RECALL_FF>0.5), y=FFPE_COVERAGE_HOMOGENEITY, fill=(PERCENT_RECALL_FF>0.5))) + geom_boxplot() + geom_jitter() + labs(x = "High FF CNV Recall (>50%)", y = "FFPE Unevenness of Coverage") + theme(legend.title=element_blank())
-
-# Recall by FFPE tumor purity
-ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = FFPE_TUMOUR_PURITY)) + geom_jitter()
 ggplot(data=CNV_summary, aes(x=(PERCENT_RECALL_FF>0.5), y=FFPE_TUMOUR_PURITY, fill=(PERCENT_RECALL_FF>0.5))) + geom_boxplot() + geom_jitter() + labs(x = "High FF CNV Recall (>50%)", y = "FFPE Tumour Purity") + theme(legend.title=element_blank())
-
+ggplot(data=CNV_summary, aes(x=(PERCENT_RECALL_FF>0.5), y=FF_TUMOUR_PURITY, fill=(PERCENT_RECALL_FF>0.5))) + geom_boxplot() + geom_jitter() + labs(x = "High FF CNV Recall (>50%)", y = "FF Tumour Purity") + theme(legend.title=element_blank())
 # Recall by % chimeric fragments
 ggplot(data=CNV_summary, aes(x=(PERCENT_RECALL_FF>0.5), y=FFPE_CHIMERIC_PER, fill=(PERCENT_RECALL_FF>0.5))) + geom_boxplot() + geom_jitter() + labs(x = "High FF CNV Recall (>50%)", y = "FFPE Chimeric Frag") + theme(legend.title=element_blank())
-
-
-# Recall by tumor type
+# Recall by tumor type (not enough data...)
 ggplot(data=CNV_summary, aes(x=TumorType, y=PERCENT_RECALL_FF)) + geom_boxplot() + geom_jitter(aes(col = TumorType)) + labs(x = "Tumor Type", y = "Percent CNV Recall") + theme(legend.title=element_blank())
-
 # Recall by GMC, color by tumor type
 ggplot(data=CNV_summary, aes(x=CENTER_CODE, y=PERCENT_RECALL_FF)) + geom_boxplot() + geom_jitter(aes(col = TumorType)) + labs(x = "GMC", y = "Percent CNV Recall") + theme(legend.title=element_blank())
-
 # Recall by FF library type
 ggplot(data=CNV_summary, aes(x=FF_LIBRARY_TYPE, y=PERCENT_RECALL_FF)) + geom_boxplot() + geom_jitter(aes(col = TumorType)) + labs(x = "FF Library Type", y = "Percent CNV Recall") + theme(legend.title=element_blank())
+# Recall by fragment size
+ggplot(CNV_summary, aes(x = PERCENT_RECALL_FF, y = FFPE_AV_FRAGMENT_SIZE_BP, col = factor(TumorType))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "FFPE Fragment Size") + theme(legend.title=element_blank())
 
+
+
+# PRECISION by AT dropout/coverage homogeneity, chim reads, mapping rate of FFPE, colored by center
+ggplot(CNV_summary, aes(x = PERCENT_RECALL_FFPE, y = FFPE_AT_DROP, col = factor(CENTER_CODE))) + geom_jitter() + regr_line + labs(x = "FFPE Precision", y = "FFPE AT Dropout") + theme(legend.title=element_blank())
+cor(CNV_summary$PERCENT_RECALL_FFPE, CNV_summary$FFPE_AT_DROP, method = "spearman")  # 0.6209609
+ggplot(CNV_summary, aes(x = PERCENT_RECALL_FFPE, y = FFPE_COVERAGE_HOMOGENEITY, col = factor(CENTER_CODE))) + geom_jitter() + regr_line + labs(x = "FFPE Precision", y = "FFPE Unevenness of Coverage") + theme(legend.title=element_blank())
+cor(CNV_summary$PERCENT_RECALL_FFPE, CNV_summary$FFPE_COVERAGE_HOMOGENEITY, method = "spearman")  # 0.2841026
+ggplot(CNV_summary, aes(x = PERCENT_RECALL_FFPE, y = FFPE_CHIMERIC_PER, col = factor(CENTER_CODE))) + geom_jitter() + regr_line + labs(x = "FFPE Precision", y = "FFPE % Chimeric") + theme(legend.title=element_blank())
+cor(CNV_summary$PERCENT_RECALL_FFPE, CNV_summary$FFPE_CHIMERIC_PER, method = "spearman")  # 0.3519754
+ggplot(CNV_summary, aes(x = PERCENT_RECALL_FFPE, y = FFPE_MAPPING_RATE_PER, col = factor(CENTER_CODE))) + geom_jitter() + regr_line + labs(x = "FFPE Precision", y = "FFPE Mapping Rate") + theme(legend.title=element_blank())
+cor(CNV_summary$PERCENT_RECALL_FFPE, CNV_summary$FFPE_MAPPING_RATE_PER, method = "spearman")  # -0.2622222
+# Recall by tumor purity
+ggplot(CNV_summary, aes(x = PERCENT_RECALL_FFPE, y = FFPE_TUMOUR_PURITY, col = factor(TumorType))) + geom_jitter() + labs(x = "FFPE Precision", y = "FFPE Tumour Purity")  + theme(legend.title=element_blank()) + regr_line
+cor(CNV_summary$PERCENT_RECALL_FFPE, CNV_summary$FFPE_TUMOUR_PURITY, method = "spearman")  # 0.516262
+# PRECISION by GMC, color by tumor type
+ggplot(data=CNV_summary, aes(x=CENTER_CODE, y=PERCENT_RECALL_FFPE)) + geom_boxplot() + geom_jitter(aes(col = TumorType)) + labs(x = "GMC", y = "FFPE Precision") + theme(legend.title=element_blank())
+# PRECISION by FF library type
+ggplot(data=CNV_summary, aes(x=FF_LIBRARY_TYPE, y=PERCENT_RECALL_FFPE)) + geom_boxplot() + geom_jitter(aes(col = TumorType)) + labs(x = "FF Library Type", y = "FFPE Precision") + theme(legend.title=element_blank())
+
+
+### FF vs FFPE tumor purity
+ggplot(data=CNV_summary, aes(x=FFPE_TUMOUR_PURITY, y=FF_TUMOUR_PURITY)) + geom_jitter(aes(col = TumorType)) + labs(x = "FFPE Tumor Purity", y = "FF Tumor Purity") + theme(legend.title=element_blank()) + regr_line
+cor(CNV_summary$FFPE_TUMOUR_PURITY, CNV_summary$FF_TUMOUR_PURITY, method = "spearman")  #  0.5927387
 
 
 
