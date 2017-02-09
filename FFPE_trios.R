@@ -277,10 +277,68 @@ names(ffpe_overlap) <- c(names(ff_bed), "NumOverlap", "BPoverlap", "BPTotal", "P
 result <- data.frame(PATIENT_ID = "217000028", PERCENT_RECALL_FF = sum(ff_overlap$BPoverlap) / sum(ff_overlap$BPTotal), PERCENT_RECALL_FFPE = sum(ffpe_overlap$BPoverlap) / sum(ffpe_overlap$BPTotal), BP_OVERLAP = sum(ff_overlap$BPoverlap), BP_FF_ONLY = (sum(ff_overlap$BPTotal) - sum(ff_overlap$BPoverlap)), BP_FFPE_ONLY = (sum(ffpe_overlap$BPTotal) - sum(ffpe_overlap$BPoverlap)))
 
 
-
 # Write BAM paths into a file so I can copy the VCFs locally (not used)
 #write.table(QC_portal_trios$BamPath, file = "FFPEtrio_bamPaths.txt", quote = F, row.names = F, col.names = F)
 
 
+
+
+
+############  Explore MANTA SVs ############
+
+# Load original test VCFs
+ff_vcf <- readVcf(file = "/Users/MartinaMijuskovic/FFPE/Trio_VCFs/LP3000067-DNA_E06_LP3000070-DNA_G01.somatic.SV.vcf.gz")
+ffpe_vcf <- readVcf(file = "/Users/MartinaMijuskovic/FFPE/Trio_VCFs/LP3000067-DNA_E06_LP3000079-DNA_B02.somatic.SV.vcf.gz")
+
+### FF
+# Extract INFO table (all SVs)
+SVinfo_ff <- as.data.frame(info(ff_vcf))
+# Add filter field
+SVinfo_ff$FILTER <- rowRanges(ff_vcf)$FILTER
+# Create Application variable (Canvas or Manta?)
+SVinfo_ff$Application <- ""
+SVinfo_ff[grepl("Canvas", rownames(SVinfo_ff)),]$Application <- "Canvas"
+SVinfo_ff[grepl("Manta", rownames(SVinfo_ff)),]$Application <- "Manta"
+# Extract ID
+SVinfo_ff$ID <- rownames(SVinfo_ff)
+
+# Remove filtered entries, keep Manta only
+Manta_ff <- SVinfo_ff %>% filter(FILTER == "PASS", Application == "Manta")  # 207 
+
+# Add chr, start, end positions
+as.data.frame(ranges(ff_vcf))  # gets start, end (by width), IDs (names)
+as.data.frame(seqnames(ff_vcf))  # gets chr name
+
+
+
+
+
+
+
+
+
+
+### FFPE
+# Extract INFO table (all SVs)
+SVinfo_ffpe <- as.data.frame(info(ffpe_vcf))
+# Add filter field
+SVinfo_ffpe$FILTER <- rowRanges(ffpe_vcf)$FILTER
+# Create Application variable (Canvas or Manta?)
+SVinfo_ffpe$Application <- ""
+SVinfo_ffpe[grepl("Canvas", rownames(SVinfo_ffpe)),]$Application <- "Canvas"
+SVinfo_ffpe[grepl("Manta", rownames(SVinfo_ffpe)),]$Application <- "Manta"
+
+# Extract ID
+SVinfo_ffpe$ID <- rownames(SVinfo_ffpe)
+
+# Remove filtered entries, keep Manta only
+Manta_ffpe <- SVinfo_ffpe %>% filter(FILTER == "PASS", Application == "Manta")  # 1239
+
+
+
+### Plots to explore Manta SVs
+
+# Variant qualities by SV type
+Manta_ff %>% group_by(SVTYPE) %>% ggvis(~SOMATICSCORE, fill = ~SVTYPE) %>% layer_densities()
 
 
