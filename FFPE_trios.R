@@ -123,6 +123,38 @@ QC_portal_trios[QC_portal_trios$SAMPLE_WELL_ID == "LP3000079-DNA_H01",]$BamPath 
 write.csv(QC_portal_trios, file = "QC_portal_trios.csv", quote = F, row.names = F)
 
 
+############  Add PCR dup percentage (HPC) ############
+
+# Get Metrics file paths (HPC) - NOTE that there is none for the germline
+QC_portal_trios$Metrics_path <- as.character(sapply(QC_portal_trios$BamPath, function(x){
+  command <- paste("find", paste0(x, "/*Metrics.csv"), sep = " ")
+  system(command, intern = T)
+}))
+
+# Get 2 missing paths manually
+# /genomes/by_date/2017-01-16/CANCP41020/CancerLP3000162-DNA_E01_NormalLP3000067-DNA_B09/LP3000067-DNA_B09_LP3000162-DNA_E01.summary.csv (LP3000162-DNA_E01)
+# /genomes/by_date/2017-01-16/CANCP41019/CancerLP3000162-DNA_D01_NormalLP3000067-DNA_D04/LP3000067-DNA_D04_LP3000162-DNA_D01.summary.csv (LP3000162-DNA_D01)
+QC_portal_trios[QC_portal_trios$SAMPLE_WELL_ID == "LP3000162-DNA_E01",]$Metrics_path <- "/genomes/by_date/2017-01-16/CANCP41020/CancerLP3000162-DNA_E01_NormalLP3000067-DNA_B09/LP3000067-DNA_B09_LP3000162-DNA_E01.summary.csv"
+QC_portal_trios[QC_portal_trios$SAMPLE_WELL_ID == "LP3000162-DNA_D01",]$Metrics_path <- "/genomes/by_date/2017-01-16/CANCP41019/CancerLP3000162-DNA_D01_NormalLP3000067-DNA_D04/LP3000067-DNA_D04_LP3000162-DNA_D01.summary.csv"
+
+
+# Read the csv file with the metrics and add PCR % info to the QC table
+QC_portal_trios$PCR_DUPL <- NA
+QC_portal_trios[QC_portal_trios$SAMPLE_TYPE != "GL",]$PCR_DUPL <- sapply(1:dim(QC_portal_trios[QC_portal_trios$SAMPLE_TYPE != "GL",])[1], function(x){
+  as.character(read.csv(QC_portal_trios[QC_portal_trios$SAMPLE_TYPE != "GL",]$Metrics_path[x], header = F, skip = 13, nrows=1)$V2)
+})
+# Correct for those with shifted rows
+QC_portal_trios$PCR_DUPL2 <- NA
+QC_portal_trios[QC_portal_trios$SAMPLE_TYPE != "GL",]$PCR_DUPL2 <- sapply(1:dim(QC_portal_trios[QC_portal_trios$SAMPLE_TYPE != "GL",])[1], function(x){
+  as.character(read.csv(QC_portal_trios[QC_portal_trios$SAMPLE_TYPE != "GL",]$Metrics_path[x], header = F, skip = 15, nrows=1)$V2)
+})
+# Clean up PCR_DUPL
+QC_portal_trios[!grepl("%", QC_portal_trios$PCR_DUPL),]$PCR_DUPL <- QC_portal_trios[!grepl("%", QC_portal_trios$PCR_DUPL),]$PCR_DUPL2
+x <- dim(QC_portal_trios)[2]
+QC_portal_trios <- QC_portal_trios[-x]
+
+# Write the trios QC portal data
+write.csv(QC_portal_trios, file = "QC_portal_trios_final.csv", quote = F, row.names = F)
 
 
 
@@ -286,6 +318,9 @@ result <- data.frame(PATIENT_ID = "217000028", PERCENT_RECALL_FF = sum(ff_overla
 
 ############  Explore MANTA SVs ############
 
+# Load QC_portal_trios with PCR_DUPL added
+QC_portal_trios <- read.csv("QC_portal_trios_final.csv", header = T)
+
 # Load original test VCFs
 ff_vcf <- readVcf(file = "/Users/MartinaMijuskovic/FFPE/Trio_VCFs/LP3000067-DNA_E06_LP3000070-DNA_G01.somatic.SV.vcf.gz")
 ffpe_vcf <- readVcf(file = "/Users/MartinaMijuskovic/FFPE/Trio_VCFs/LP3000067-DNA_E06_LP3000079-DNA_B02.somatic.SV.vcf.gz")
@@ -301,14 +336,51 @@ SVinfo_ff[grepl("Canvas", rownames(SVinfo_ff)),]$Application <- "Canvas"
 SVinfo_ff[grepl("Manta", rownames(SVinfo_ff)),]$Application <- "Manta"
 # Extract ID
 SVinfo_ff$ID <- rownames(SVinfo_ff)
+# Add START, CHR (correct END already exists in the info table, note that for insertions - start/end are the same)
+SVinfo_ff$START <- as.data.frame(ranges(ff_vcf))$start
+SVinfo_ff$CHR <- as.character(seqnames(ff_vcf))
 
-# Remove filtered entries, keep Manta only
+# Examine some variants, look at false positives
+#SVinfo_ff %>% filter(FILTER == "PASS", IMPRECISE == "FALSE") %>% select(CHR, START, END, SVLEN, SVTYPE, IMPRECISE, FILTER)
+
+# Add number of supporting paired and reads
+#ff_vcf@assays$data$PR
+#geno(ff_vcf)[[1]][1:5]
+SVinfo_ff$PR_REF <- sapply(1:dim(SVinfo_ff)[1], function(x){
+  geno(ff_vcf)[[1]][x][[1]][1]
+})
+SVinfo_ff$PR_ALT <- sapply(1:dim(SVinfo_ff)[1], function(x){
+  geno(ff_vcf)[[1]][x][[1]][2]
+})
+
+# Add number of supporting split reads
+#ff_vcf@assays$data$SR
+#geno(ff_vcf)[[2]][1:5]
+SVinfo_ff$SR_REF <- sapply(1:dim(SVinfo_ff)[1], function(x){
+  geno(ff_vcf)[[2]][x][[1]][1]
+})
+SVinfo_ff$SR_ALT <- sapply(1:dim(SVinfo_ff)[1], function(x){
+  geno(ff_vcf)[[2]][x][[1]][2]
+})
+
+# Add PR/SR flag (1=evidence based on PR/SR exists for somatic variant)
+SVinfo_ff$PR_EV <- as.numeric(SVinfo_ff$PR_ALT > 0)
+SVinfo_ff$SR_EV <- as.numeric(SVinfo_ff$SR_ALT > 0)  
+
+# Remove filtered entries, keep Manta only (WARNING: some "good" >10kb SVs might be filtered out too, filter "MGE10kb", 85 in total)
 Manta_ff <- SVinfo_ff %>% filter(FILTER == "PASS", Application == "Manta")  # 207 
 
-# Add chr, start, end positions
-as.data.frame(ranges(ff_vcf))  # gets start, end (by width), IDs (names)
-as.data.frame(seqnames(ff_vcf))  # gets chr name
+# Convert WindowMasker to BED format (do on HPC)
+wMasker <- read.table("/Users/MartinaMijuskovic/Documents/windowmaskerSdust.hg38.txt")
 
+
+# Call bedtools to find overlaps with WindowMasker
+
+# Read bedtools output file
+
+# Filter out SVs where START or END overlaps with WindowMasker
+
+# Overview of leftover high
 
 
 
@@ -331,8 +403,35 @@ SVinfo_ffpe[grepl("Manta", rownames(SVinfo_ffpe)),]$Application <- "Manta"
 # Extract ID
 SVinfo_ffpe$ID <- rownames(SVinfo_ffpe)
 
+# Add START, CHR (correct END already exists in the info table, note that for insertions - start/end are the same)
+SVinfo_ffpe$START <- as.data.frame(ranges(ffpe_vcf))$start
+SVinfo_ffpe$CHR <- as.character(seqnames(ffpe_vcf))
+
+# Add number of supporting paired and reads
+SVinfo_ffpe$PR_REF <- sapply(1:dim(SVinfo_ffpe)[1], function(x){
+  geno(ffpe_vcf)[[1]][x][[1]][1]
+})
+SVinfo_ffpe$PR_ALT <- sapply(1:dim(SVinfo_ffpe)[1], function(x){
+  geno(ffpe_vcf)[[1]][x][[1]][2]
+})
+
+# Add number of supporting split reads
+SVinfo_ffpe$SR_REF <- sapply(1:dim(SVinfo_ffpe)[1], function(x){
+  geno(ffpe_vcf)[[2]][x][[1]][1]
+})
+SVinfo_ffpe$SR_ALT <- sapply(1:dim(SVinfo_ffpe)[1], function(x){
+  geno(ffpe_vcf)[[2]][x][[1]][2]
+})
+
+# Add PR/SR flag (1=evidence based on PR/SR exists for somatic variant)
+SVinfo_ffpe$PR_EV <- as.numeric(SVinfo_ffpe$PR_ALT > 0)
+SVinfo_ffpe$SR_EV <- as.numeric(SVinfo_ffpe$SR_ALT > 0)  
+
 # Remove filtered entries, keep Manta only
 Manta_ffpe <- SVinfo_ffpe %>% filter(FILTER == "PASS", Application == "Manta")  # 1239
+
+
+
 
 
 
