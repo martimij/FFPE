@@ -14,6 +14,13 @@ library(VariantAnnotation)
 
 rm(list=ls())
 
+### For ggplot
+# Blank theme
+blank <-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank())
+# Black regression line (linear model)
+regr_line <- geom_smooth(method = "lm", se = F, aes(group = 1), linetype = 2, col = "black", size = 0.5)
+
+
 ############  Read and clean data ############  
 
 # Read QC data for all cancer samples ((Jan 26 2017))
@@ -316,7 +323,7 @@ result <- data.frame(PATIENT_ID = "217000028", PERCENT_RECALL_FF = sum(ff_overla
 
 
 
-############  Explore MANTA SVs ############
+############  Explore and clean MANTA SVs ############
 
 # Load QC_portal_trios with PCR_DUPL added
 QC_portal_trios <- read.csv("QC_portal_trios_final.csv", header = T)
@@ -370,20 +377,27 @@ SVinfo_ff$SR_EV <- as.numeric(SVinfo_ff$SR_ALT > 0)
 # Remove filtered entries, keep Manta only (WARNING: some "good" >10kb SVs might be filtered out too, filter "MGE10kb", 85 in total)
 Manta_ff <- SVinfo_ff %>% filter(FILTER == "PASS", Application == "Manta")  # 207 
 
-# Convert WindowMasker to BED format (do on HPC)
-wMasker <- read.table("/Users/MartinaMijuskovic/Documents/windowmaskerSdust.hg38.txt")
+# Look at some filtered out >10kb SVs (looked at ~20 manually, none look real, most overlap with data base of known structural variants)
+#SVinfo_ff %>% filter(Application == "Manta", FILTER == "MGE10kb") %>% select(CHR, START, END, IMPRECISE, SVLEN, PR_ALT, SR_ALT)
 
+# Remove unknown CHR from the table and add chrY
+normal_chr <- c(grep("chrUn", grep("chr", levels(factor(Manta_ff$CHR)), value = T), value = T, invert = T), "chrY")  
+Manta_ff <- Manta_ff %>% filter(CHR %in% normal_chr)  # 200
 
-# Call bedtools to find overlaps with WindowMasker
+# Compare precise vs non-precise, look at range of supporting reads
+table(Manta_ff$IMPRECISE, Manta_ff$SVTYPE)
+sum(Manta_ff$IMPRECISE)/dim(Manta_ff)[1]  # 0.11 (percentage of imprecise)
 
-# Read bedtools output file
+# Filter out imprecise SVs for this purpose
+Manta_ff <- Manta_ff %>% filter(IMPRECISE == FALSE)  # 178
 
-# Filter out SVs where START or END overlaps with WindowMasker
+# Look at range of supporting reads
+table( Manta_ff$PR_ALT <3, Manta_ff$SVTYPE)
+table( Manta_ff$SR_ALT <3, Manta_ff$SVTYPE)
+table( ((Manta_ff$PR_ALT <3) & (Manta_ff$SR_ALT <3)), Manta_ff$SVTYPE)  # 2 BND with < 3 both SR and PR
 
-# Overview of leftover high
-
-
-
+# Filter out SVs with <3 supporting PR AND SR reads
+Manta_ff <- Manta_ff[!((Manta_ff$PR_ALT <3) & (Manta_ff$SR_ALT <3)),]  # 176
 
 
 
@@ -429,6 +443,108 @@ SVinfo_ffpe$SR_EV <- as.numeric(SVinfo_ffpe$SR_ALT > 0)
 
 # Remove filtered entries, keep Manta only
 Manta_ffpe <- SVinfo_ffpe %>% filter(FILTER == "PASS", Application == "Manta")  # 1239
+
+# Remove unknown CHR from the table and add chrY
+Manta_ffpe <- Manta_ffpe %>% filter(CHR %in% normal_chr)  # 1221
+
+# Compare precise vs non-precise, look at range of supporting reads
+table(Manta_ffpe$IMPRECISE, Manta_ffpe$SVTYPE)
+sum(Manta_ffpe$IMPRECISE)/dim(Manta_ffpe)[1]  # 0.02457002 (percentage of imprecise)
+
+# Filter out imprecise SVs for this purpose
+Manta_ffpe <- Manta_ffpe %>% filter(IMPRECISE == FALSE)  # 1191
+
+# Look at range of supporting reads
+table( Manta_ffpe$PR_ALT <3, Manta_ffpe$SVTYPE)
+table( Manta_ffpe$SR_ALT <3, Manta_ffpe$SVTYPE)
+table( ((Manta_ffpe$PR_ALT <3) & (Manta_ffpe$SR_ALT <3)), Manta_ffpe$SVTYPE)  # 2 BND with < 3 both SR and PR
+
+# Filter out SVs with <3 supporting PR AND SR reads
+Manta_ffpe <- Manta_ffpe[!((Manta_ffpe$PR_ALT <3) & (Manta_ffpe$SR_ALT <3)),]  # 806
+
+
+
+############  Plots comparing FF and FFPE read support ############  
+
+# Plot supporting reads per SV type (FF)
+ggplot(Manta_ff, aes(x=factor(SVTYPE), y=PR_ALT)) + geom_boxplot() + geom_jitter(aes(colour = factor(SVTYPE))) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Paired Reads (FF)")
+ggplot(Manta_ff, aes(x=factor(SVTYPE), y=SR_ALT)) + geom_boxplot() + geom_jitter(aes(colour = factor(SVTYPE))) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Split Reads (FF)")
+ggplot(Manta_ff, aes(x=PR_ALT, y=SR_ALT, colour=SVTYPE)) + geom_jitter() + blank + regr_line + ggtitle("Split vs Paired Reads (FF)")
+cor(Manta_ff$PR_ALT, Manta_ff$SR_ALT, method = "pearson")  # 0.5392241
+
+# Plot supporting reads per SV type (FFPE)
+ggplot(Manta_ffpe, aes(x=factor(SVTYPE), y=PR_ALT)) + geom_boxplot() + geom_jitter(aes(colour = factor(SVTYPE))) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Paired Reads (FFPE)")
+ggplot(Manta_ffpe, aes(x=factor(SVTYPE), y=SR_ALT)) + geom_boxplot() + geom_jitter(aes(colour = factor(SVTYPE))) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Split Reads (FFPE)")
+ggplot(Manta_ffpe, aes(x=PR_ALT, y=SR_ALT, colour=SVTYPE)) + geom_jitter() + blank + regr_line + ggtitle("Split vs Paired Reads (FFPE)")
+cor(Manta_ffpe$PR_ALT, Manta_ffpe$SR_ALT, method = "pearson")  # 0.3317059
+
+# FF vs FFPE
+Manta_ff$FF <- "FF"
+Manta_ffpe$FF <- "FFPE"
+ff_ffpe_merged <- rbind(Manta_ff, Manta_ffpe)
+# PR
+ggplot(ff_ffpe_merged, aes(x=factor(SVTYPE), y=PR_ALT)) + geom_jitter(aes(colour = factor(FF)), alpha = 0.6) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Paired Reads")
+ggplot(ff_ffpe_merged, aes(x=factor(SVTYPE), y=PR_ALT)) + geom_boxplot(aes(colour = factor(FF))) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Paired Reads")
+# SR
+ggplot(ff_ffpe_merged, aes(x=factor(SVTYPE), y=SR_ALT)) + geom_jitter(aes(colour = factor(FF)), alpha = 0.6) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Split Reads")
+ggplot(ff_ffpe_merged, aes(x=factor(SVTYPE), y=SR_ALT)) + geom_boxplot(aes(colour = factor(FF))) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Split Reads")
+
+
+
+############  Compare non-filtered MANTA SVs ############
+
+### This is the direct comparison (exact breakpoint)
+
+# Create CHR_START_END_TYPE key and look for dups
+ff_ffpe_merged$KEY <- sapply(1:dim(ff_ffpe_merged)[1], function(x){
+  paste(ff_ffpe_merged$CHR[x], ff_ffpe_merged$START[x], ff_ffpe_merged$END[x], ff_ffpe_merged$SVTYPE[x], sep = "-")
+})
+sum(duplicated(ff_ffpe_merged$KEY))  # 54 exact same events
+
+# Check that dups are among different samples
+sum(duplicated(ff_ffpe_merged[ff_ffpe_merged$FF == "FF",]$KEY))  # 0
+sum(duplicated(ff_ffpe_merged[ff_ffpe_merged$FF == "FFPE",]$KEY))  # 0
+
+# Add CONCORDANT flag to FF and FFPE calls
+concordant_keys <- ff_ffpe_merged[duplicated(ff_ffpe_merged$KEY),]$KEY
+ff_ffpe_merged$CONCORDANT <- 0
+ff_ffpe_merged[ff_ffpe_merged$KEY %in% concordant_keys,]$CONCORDANT <- 1
+
+# Concordant calls by SV type
+table(ff_ffpe_merged$CONCORDANT, ff_ffpe_merged$SVTYPE)[2,]/2
+
+# Total SVs in FF and FFPE
+table(ff_ffpe_merged$FF, ff_ffpe_merged$SVTYPE)
+
+# FFPE recall and precision 
+(table(ff_ffpe_merged$CONCORDANT, ff_ffpe_merged$SVTYPE)[2,]/2) / table(ff_ffpe_merged$FF, ff_ffpe_merged$SVTYPE)[1,] # Recall
+(table(ff_ffpe_merged$CONCORDANT, ff_ffpe_merged$SVTYPE)[2,]/2) / table(ff_ffpe_merged$FF, ff_ffpe_merged$SVTYPE)[2,] # Precision
+
+
+
+############  Compare filtered MANTA SVs ############
+
+### Prepare filtering
+
+# Convert WindowMasker to BED format (do on HPC)
+wMasker <- read.table("/Users/MartinaMijuskovic/Documents/windowmaskerSdust.hg38.txt")
+
+# Call bedtools to find overlaps with WindowMasker
+
+# Read bedtools output file
+
+# Filter out SVs where START or END overlaps with WindowMasker
+
+# Overview of leftover high
+
+
+
+
+
+
+
+
+
 
 
 
