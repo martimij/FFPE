@@ -527,9 +527,32 @@ table(ff_ffpe_merged$FF, ff_ffpe_merged$SVTYPE)
 ### Prepare filtering
 
 # Convert WindowMasker to BED format (do on HPC)
-wMasker <- read.table("/Users/MartinaMijuskovic/Documents/windowmaskerSdust.hg38.txt")
+wMasker <- read.table("/home/mmijuskovic/FFPE/windowmaskerSdust.hg38.txt", header = F)
+wMasker <- wMasker %>% select(-(V1))
+write.table(wMasker, file = "windowmaskerSdust.hg38.bed", row.names = F, col.names = F)
+
+# Create a bed file with SVs, start and end separately, remove NAs
+start_bed <- cbind((ff_ffpe_merged %>% dplyr::select(CHR, START)), (ff_ffpe_merged %>% dplyr::select(START, KEY)))
+names(start_bed)[3] <- "end"
+start_bed <- start_bed %>% filter(!is.na(START))
+write.table(start_bed, file = "sv_start.bed", quote = F, row.names = F, col.names = F, sep = "\t")
+
+end_bed <- cbind((ff_ffpe_merged %>% dplyr::select(CHR, END)), (ff_ffpe_merged %>% dplyr::select(END, KEY)))
+names(end_bed)[2] <- "start"
+end_bed <- end_bed %>% filter(!is.na(END))
+write.table(end_bed, file = "sv_end.bed", quote = F, row.names = F, col.names = F, sep = "\t")
 
 # Call bedtools to find overlaps with WindowMasker
+# start
+system('bedtools coverage -a sv_start.bed -b windowmaskerSdust.hg38.bed > sv_wMasker_start_overlap.bed', intern = T)
+sv_wMasker_start <- read.table("sv_wMasker_start_overlap.bed", sep = "\t")
+names(sv_wMasker_start) <- c(names(start_bed), "NumOverlap", "BPoverlap", "BPTotal", "PCT")
+# end
+system('bedtools coverage -a sv_end.bed -b windowmaskerSdust.hg38.bed > sv_wMasker_end_overlap.bed', intern = T)
+sv_wMasker_end <- read.table("sv_wMasker_end_overlap.bed", sep = "\t")
+names(sv_wMasker_end) <- c(names(end_bed), "NumOverlap", "BPoverlap", "BPTotal", "PCT")
+
+########### WARNING: remove SVs with NAs for START or END --- explore those
 
 # Read bedtools output file
 
