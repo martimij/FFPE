@@ -489,6 +489,11 @@ ggplot(ff_ffpe_merged, aes(x=factor(SVTYPE), y=PR_ALT)) + geom_boxplot(aes(colou
 ggplot(ff_ffpe_merged, aes(x=factor(SVTYPE), y=SR_ALT)) + geom_jitter(aes(colour = factor(FF)), alpha = 0.6) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Split Reads")
 ggplot(ff_ffpe_merged, aes(x=factor(SVTYPE), y=SR_ALT)) + geom_boxplot(aes(colour = factor(FF))) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Split Reads")
 
+# Only concordant reads
+ggplot(ff_ffpe_merged[ff_ffpe_merged$CONCORDANT ==1,], aes(x=factor(SVTYPE), y=PR_ALT)) + geom_jitter(aes(colour = factor(FF)), alpha = 0.6) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Paired Reads")
+ggplot(ff_ffpe_merged[ff_ffpe_merged$CONCORDANT ==1,], aes(x=factor(SVTYPE), y=PR_ALT)) + geom_boxplot(aes(colour = factor(FF))) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Paired Reads")
+ggplot(ff_ffpe_merged[ff_ffpe_merged$CONCORDANT ==1,], aes(x=factor(SVTYPE), y=SR_ALT)) + geom_jitter(aes(colour = factor(FF)), alpha = 0.6) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Split Reads")
+ggplot(ff_ffpe_merged[ff_ffpe_merged$CONCORDANT ==1,], aes(x=factor(SVTYPE), y=SR_ALT)) + geom_boxplot(aes(colour = factor(FF))) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Split Reads")
 
 
 ############  Compare non-filtered MANTA SVs ############
