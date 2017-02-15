@@ -531,15 +531,30 @@ wMasker <- read.table("/home/mmijuskovic/FFPE/windowmaskerSdust.hg38.txt", heade
 wMasker <- wMasker %>% select(-(V1))
 write.table(wMasker, file = "windowmaskerSdust.hg38.bed", row.names = F, col.names = F)
 
-# Create a bed file with SVs, start and end separately, remove NAs
-start_bed <- cbind((ff_ffpe_merged %>% dplyr::select(CHR, START)), (ff_ffpe_merged %>% dplyr::select(START, KEY)))
+# Add new type coding ("+" is FF, "-" is FFPE)
+ff_ffpe_merged$Type2 <- NA
+ff_ffpe_merged$Type2 <- sapply(1:dim(ff_ffpe_merged)[1], function(x){
+  if (ff_ffpe_merged$FF[x] == "FF") {ff_ffpe_merged$Type2[x] <- "+"}
+  else if (ff_ffpe_merged$FF[x] == "FFPE") {ff_ffpe_merged$Type2[x] <- "-"}
+})
+
+
+# Create a bed file with SVs, start and end separately, remove NAs, code FF and FFPE as strand ("+" for FF, "-" for FFPE)
+# Note that START has to be adjusted to 0-based (-1) and end is not included (stays same)
+start_bed <- cbind((ff_ffpe_merged %>% dplyr::select(CHR, START)), (ff_ffpe_merged %>% dplyr::select(START, KEY, Type2)))
 names(start_bed)[3] <- "end"
+start_bed$Score <- ""
+start_bed <- start_bed %>% select(CHR, START, end, KEY, Score, Type2)
 start_bed <- start_bed %>% filter(!is.na(START))
+start_bed$START <- start_bed$START-1
 write.table(start_bed, file = "sv_start.bed", quote = F, row.names = F, col.names = F, sep = "\t")
 
-end_bed <- cbind((ff_ffpe_merged %>% dplyr::select(CHR, END)), (ff_ffpe_merged %>% dplyr::select(END, KEY)))
+end_bed <- cbind((ff_ffpe_merged %>% dplyr::select(CHR, END)), (ff_ffpe_merged %>% dplyr::select(END, KEY, Type2)))
 names(end_bed)[2] <- "start"
+end_bed$Score <- ""
+end_bed <- end_bed %>% select(CHR, start, END, KEY, Score, Type2)
 end_bed <- end_bed %>% filter(!is.na(END))
+end_bed$start <- end_bed$start-1
 write.table(end_bed, file = "sv_end.bed", quote = F, row.names = F, col.names = F, sep = "\t")
 
 # Call bedtools to find overlaps with WindowMasker
@@ -552,31 +567,115 @@ system('bedtools coverage -a sv_end.bed -b windowmaskerSdust.hg38.bed > sv_wMask
 sv_wMasker_end <- read.table("sv_wMasker_end_overlap.bed", sep = "\t")
 names(sv_wMasker_end) <- c(names(end_bed), "NumOverlap", "BPoverlap", "BPTotal", "PCT")
 
-########### WARNING: remove SVs with NAs for START or END --- explore those
-
-# Read bedtools output file
+# Collect KEYs with wMasker overlap
+wMasker_keys <- unique(c(as.character(sv_wMasker_start %>% filter(NumOverlap != 0) %>% .$KEY), as.character(sv_wMasker_end %>% filter(NumOverlap != 0) %>% .$KEY)))
+length(wMasker_keys) # 725 of 982 filtered out
 
 # Filter out SVs where START or END overlaps with WindowMasker
+ff_ffpe_merged$wMasker_filtered <- 0
+ff_ffpe_merged[(ff_ffpe_merged$KEY %in% wMasker_keys),]$wMasker_filtered <- 1
+ff_ffpe_merged_fil <- ff_ffpe_merged %>% filter(wMasker_filtered == 0)
 
-# Overview of leftover high
+# Overview of leftover high quality SV candidates
+table(ff_ffpe_merged_fil$FF, ff_ffpe_merged_fil$SVTYPE)
+
+### Comparison of filtered SV candidates
+# Concordant calls by SV type
+table(ff_ffpe_merged_fil$CONCORDANT, ff_ffpe_merged_fil$SVTYPE)[2,]/2
+
+# Total SVs in FF and FFPE
+table(ff_ffpe_merged_fil$FF, ff_ffpe_merged_fil$SVTYPE)
+
+# FFPE recall and precision 
+(table(ff_ffpe_merged_fil$CONCORDANT, ff_ffpe_merged_fil$SVTYPE)[2,]/2) / table(ff_ffpe_merged_fil$FF, ff_ffpe_merged_fil$SVTYPE)[1,] # Recall
+(table(ff_ffpe_merged_fil$CONCORDANT, ff_ffpe_merged_fil$SVTYPE)[2,]/2) / table(ff_ffpe_merged_fil$FF, ff_ffpe_merged_fil$SVTYPE)[2,] # Precision
+
+# Check concordant filtered calls
+ff_ffpe_merged_fil %>% filter(CONCORDANT == 1) %>% select(KEY, FF, PR_ALT, SR_ALT, BND_DEPTH, MATE_BND_DEPTH)
+
+
+
+################# Check germline VCF ################# 
+
+# Read germline VCF
+gl_vcf <- readVcf(file = "/Users/MartinaMijuskovic/FFPE/Trio_VCFs/LP3000067-DNA_E06.SV.vcf.gz")
+
+# Extract INFO table (all SVs)
+SVinfo_gl <- as.data.frame(info(gl_vcf))
+# Add filter field
+SVinfo_gl$FILTER <- rowRanges(gl_vcf)$FILTER
+# Create Application variable (Canvas or Manta?)
+SVinfo_gl$Application <- ""
+SVinfo_gl[grepl("Canvas", rownames(SVinfo_gl)),]$Application <- "Canvas"
+SVinfo_gl[grepl("Manta", rownames(SVinfo_gl)),]$Application <- "Manta"
+# Extract ID
+SVinfo_gl$ID <- rownames(SVinfo_gl)
+
+# Add START, CHR (correct END already exists in the info table, note that for insertions - start/end are the same)
+SVinfo_gl$START <- as.data.frame(ranges(gl_vcf))$start
+SVinfo_gl$CHR <- as.character(seqnames(gl_vcf))
+
+# Add number of supporting paired and reads
+# gl_vcf@assays$data$PR
+# geno(gl_vcf)[[5]][1:5]  # PR
+# geno(gl_vcf)[[6]][1:5]  # SR
+SVinfo_gl$PR_REF <- sapply(1:dim(SVinfo_gl)[1], function(x){
+  geno(gl_vcf)[[5]][x][[1]][1]
+})
+SVinfo_gl$PR_ALT <- sapply(1:dim(SVinfo_gl)[1], function(x){
+  geno(gl_vcf)[[5]][x][[1]][2]
+})
+
+# Add number of supporting split reads
+SVinfo_gl$SR_REF <- sapply(1:dim(SVinfo_gl)[1], function(x){
+  geno(gl_vcf)[[6]][x][[1]][1]
+})
+SVinfo_gl$SR_ALT <- sapply(1:dim(SVinfo_gl)[1], function(x){
+  geno(gl_vcf)[[6]][x][[1]][2]
+})
+
+# Add PR/SR flag (1=evidence based on PR/SR exists for somatic variant)
+SVinfo_gl$PR_EV <- as.numeric(SVinfo_gl$PR_ALT > 0)
+SVinfo_gl$SR_EV <- as.numeric(SVinfo_gl$SR_ALT > 0)  
+
+# Keep Manta only (no filtering!)
+Manta_gl <- SVinfo_gl %>% filter(FILTER == "PASS", Application == "Manta")  #  11143 
+
+# Create KEY to look at precise events 
+# Create CHR_START_END_TYPE key and look for dups
+Manta_gl$KEY <- sapply(1:dim(Manta_gl)[1], function(x){
+  paste(Manta_gl$CHR[x], Manta_gl$START[x], Manta_gl$END[x], Manta_gl$SVTYPE[x], sep = "-")
+})
+sum(duplicated(Manta_gl$KEY))  # 23 exact same events (WHERE do these come from?!)
+
+# Look for SVs found in FF and FFPE
+concordant_keys2 <- ff_ffpe_merged_fil %>% filter(CONCORDANT == 1) %>% .$KEY
+Manta_gl %>% filter(KEY %in% concordant_keys2)  # none there
+# Look for Chr11 breakends
+Manta_gl %>% filter(CHR == "chr11", SVTYPE == "BND")
+
+
+
+# # Remove unknown CHR from the table and add chrY
+# Manta_gl <- Manta_gl %>% filter(CHR %in% normal_chr)  # 
+# 
+# # Compare precise vs non-precise, look at range of supporting reads
+# table(Manta_gl$IMPRECISE, Manta_gl$SVTYPE)
+# sum(Manta_gl$IMPRECISE)/dim(Manta_gl)[1]  # 0.11 (percentage of imprecise)
+# 
+# # Filter out imprecise SVs for this purpose
+# Manta_gl <- Manta_gl %>% filter(IMPRECISE == FALSE)  # 
+# 
+# # Look at range of supporting reads
+# table( Manta_gl$PR_ALT <3, Manta_gl$SVTYPE)
+# table( Manta_gl$SR_ALT <3, Manta_gl$SVTYPE)
+# table( ((Manta_gl$PR_ALT <3) & (Manta_gl$SR_ALT <3)), Manta_gl$SVTYPE)  # 2 BND with < 3 both SR and PR
+# 
+# # Filter out SVs with <3 supporting PR AND SR reads
+# Manta_gl <- Manta_gl[!((Manta_gl$PR_ALT <3) & (Manta_gl$SR_ALT <3)),]  # 
 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-### Plots to explore Manta SVs
-
-# Variant qualities by SV type
-Manta_ff %>% group_by(SVTYPE) %>% ggvis(~SOMATICSCORE, fill = ~SVTYPE) %>% layer_densities()
 
 
