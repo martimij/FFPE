@@ -529,7 +529,7 @@ table(ff_ffpe_merged$FF, ff_ffpe_merged$SVTYPE)
 
 ############  Compare filtered MANTA SVs ############
 
-### Prepare filtering
+### Prepare filtering (wMasker)
 
 # Convert WindowMasker to BED format (do on HPC)
 wMasker <- read.table("/home/mmijuskovic/FFPE/windowmaskerSdust.hg38.txt", header = F)
@@ -544,14 +544,19 @@ ff_ffpe_merged$Type2 <- sapply(1:dim(ff_ffpe_merged)[1], function(x){
 })
 
 
+
+
 # Create a bed file with SVs, start and end separately, remove NAs, code FF and FFPE as strand ("+" for FF, "-" for FFPE)
 # Note that START has to be adjusted to 0-based (-1) and end is not included (stays same)
+# 170216 amended to add 150 bp on either side of the breakpoint
 start_bed <- cbind((ff_ffpe_merged %>% dplyr::select(CHR, START)), (ff_ffpe_merged %>% dplyr::select(START, KEY, Type2)))
 names(start_bed)[3] <- "end"
 start_bed$Score <- ""
 start_bed <- start_bed %>% select(CHR, START, end, KEY, Score, Type2)
 start_bed <- start_bed %>% filter(!is.na(START))
-start_bed$START <- start_bed$START-1
+#start_bed$START <- start_bed$START-1
+start_bed$START <- start_bed$START - 151
+start_bed$end <- start_bed$end + 150
 write.table(start_bed, file = "sv_start.bed", quote = F, row.names = F, col.names = F, sep = "\t")
 
 end_bed <- cbind((ff_ffpe_merged %>% dplyr::select(CHR, END)), (ff_ffpe_merged %>% dplyr::select(END, KEY, Type2)))
@@ -559,10 +564,12 @@ names(end_bed)[2] <- "start"
 end_bed$Score <- ""
 end_bed <- end_bed %>% select(CHR, start, END, KEY, Score, Type2)
 end_bed <- end_bed %>% filter(!is.na(END))
-end_bed$start <- end_bed$start-1
+#end_bed$start <- end_bed$start-1
+end_bed$start <- end_bed$start - 151
+end_bed$END <- end_bed$END + 150
 write.table(end_bed, file = "sv_end.bed", quote = F, row.names = F, col.names = F, sep = "\t")
 
-# Call bedtools to find overlaps with WindowMasker
+# Call bedtools to find overlaps with WindowMasker 
 # start
 system('bedtools coverage -a sv_start.bed -b windowmaskerSdust.hg38.bed > sv_wMasker_start_overlap.bed', intern = T)
 sv_wMasker_start <- read.table("sv_wMasker_start_overlap.bed", sep = "\t")
@@ -574,7 +581,7 @@ names(sv_wMasker_end) <- c(names(end_bed), "NumOverlap", "BPoverlap", "BPTotal",
 
 # Collect KEYs with wMasker overlap
 wMasker_keys <- unique(c(as.character(sv_wMasker_start %>% filter(NumOverlap != 0) %>% .$KEY), as.character(sv_wMasker_end %>% filter(NumOverlap != 0) %>% .$KEY)))
-length(wMasker_keys) # 725 of 982 filtered out
+length(wMasker_keys) # 916 of 982 filtered out
 
 # Filter out SVs where START or END overlaps with WindowMasker
 ff_ffpe_merged$wMasker_filtered <- 0
@@ -588,15 +595,24 @@ table(ff_ffpe_merged_fil$FF, ff_ffpe_merged_fil$SVTYPE)
 # Concordant calls by SV type
 table(ff_ffpe_merged_fil$CONCORDANT, ff_ffpe_merged_fil$SVTYPE)[2,]/2
 
-# Total SVs in FF and FFPE
-table(ff_ffpe_merged_fil$FF, ff_ffpe_merged_fil$SVTYPE)
-
-# FFPE recall and precision 
+# FFPE recall and precision (all zero for this sample, no concordant SVs)
 (table(ff_ffpe_merged_fil$CONCORDANT, ff_ffpe_merged_fil$SVTYPE)[2,]/2) / table(ff_ffpe_merged_fil$FF, ff_ffpe_merged_fil$SVTYPE)[1,] # Recall
 (table(ff_ffpe_merged_fil$CONCORDANT, ff_ffpe_merged_fil$SVTYPE)[2,]/2) / table(ff_ffpe_merged_fil$FF, ff_ffpe_merged_fil$SVTYPE)[2,] # Precision
 
 # Check concordant filtered calls
-ff_ffpe_merged_fil %>% filter(CONCORDANT == 1) %>% select(KEY, FF, PR_ALT, SR_ALT, BND_DEPTH, MATE_BND_DEPTH)
+ff_ffpe_merged_fil %>% filter(CONCORDANT == 1) %>% select(KEY, FF, PR_ALT, SR_ALT, BND_DEPTH, MATE_BND_DEPTH, SVLEN)
+
+# Check all filtered SVs
+ff_ffpe_merged_fil %>% select(KEY, FF, PR_ALT, SR_ALT, BND_DEPTH, MATE_BND_DEPTH, SVLEN)
+# Get SV IDs
+as.data.frame(sapply((ff_ffpe_merged_fil %>% .$KEY), keyToID))
+
+# Get MATE IDs for breakends and filter out those where mates are filtered out
+#ff_vcf@info@listData$MATEID@unlistData[1]  # this just a vector of mate IDs, but no info on which rows they belong to
+#ff_vcf@info@listData$MATEID@partitioning@end[1:20]  # ???
+# NOTE that converting info(vcf) to data.frame truncates character lists (eg. Mate ID)
+
+
 
 
 
@@ -680,7 +696,11 @@ Manta_gl %>% filter(CHR == "chr11", SVTYPE == "BND")
 # Manta_gl <- Manta_gl[!((Manta_gl$PR_ALT <3) & (Manta_gl$SR_ALT <3)),]  # 
 
 
-
+# Function to extract SV ID given the SV KEY
+keyToID <- function(x){
+  key <- x
+  ff_ffpe_merged %>% filter(KEY == key) %>% .$ID
+}
 
 
 
