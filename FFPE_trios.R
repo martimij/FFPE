@@ -588,11 +588,22 @@ ff_ffpe_merged$wMasker_filtered <- 0
 ff_ffpe_merged[(ff_ffpe_merged$KEY %in% wMasker_keys),]$wMasker_filtered <- 1
 ff_ffpe_merged_fil <- ff_ffpe_merged %>% filter(wMasker_filtered == 0)
 
+# Flag breakends whose mates are filtered out
+ff_ffpe_merged_fil$MATEID <- as.character(ff_ffpe_merged_fil$MATEID)
+ff_ffpe_merged_fil$BND_MATE_FILTERED <- NA
+ff_ffpe_merged_fil[ff_ffpe_merged_fil$SVTYPE == "BND",]$BND_MATE_FILTERED <- sapply(1:dim(ff_ffpe_merged_fil[ff_ffpe_merged_fil$SVTYPE == "BND",])[1], function(x){
+  if (ff_ffpe_merged_fil[ff_ffpe_merged_fil$SVTYPE == "BND",]$MATEID[x] %in% ff_ffpe_merged_fil$ID) { return(0)}
+  else {return(1)}
+})
+
+# Filter out BND where mate is filtered out
+ff_ffpe_merged_fil <- ff_ffpe_merged_fil %>% filter(is.na(BND_MATE_FILTERED) | BND_MATE_FILTERED == 0)
+
 # Overview of leftover high quality SV candidates
 table(ff_ffpe_merged_fil$FF, ff_ffpe_merged_fil$SVTYPE)
 
 ### Comparison of filtered SV candidates
-# Concordant calls by SV type
+# Concordant calls by SV type (NONE left for this sample)
 table(ff_ffpe_merged_fil$CONCORDANT, ff_ffpe_merged_fil$SVTYPE)[2,]/2
 
 # FFPE recall and precision (all zero for this sample, no concordant SVs)
@@ -604,13 +615,6 @@ ff_ffpe_merged_fil %>% filter(CONCORDANT == 1) %>% select(KEY, FF, PR_ALT, SR_AL
 
 # Check all filtered SVs
 ff_ffpe_merged_fil %>% select(KEY, FF, PR_ALT, SR_ALT, BND_DEPTH, MATE_BND_DEPTH, SVLEN)
-# Get SV IDs
-as.data.frame(sapply((ff_ffpe_merged_fil %>% .$KEY), keyToID))
-
-# Get MATE IDs for breakends and filter out those where mates are filtered out
-#ff_vcf@info@listData$MATEID@unlistData[1]  # this just a vector of mate IDs, but no info on which rows they belong to
-#ff_vcf@info@listData$MATEID@partitioning@end[1:20]  # ???
-# NOTE that converting info(vcf) to data.frame truncates character lists (eg. Mate ID)
 
 
 
