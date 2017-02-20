@@ -8,8 +8,8 @@ library("dplyr")
 library("ggvis")
 library("ggplot2")
 
-source("https://bioconductor.org/biocLite.R")
-biocLite("VariantAnnotation")
+# source("https://bioconductor.org/biocLite.R")
+# biocLite("VariantAnnotation")
 library(VariantAnnotation)
 
 rm(list=ls())
@@ -195,10 +195,6 @@ QC_portal_trios <- read.csv("QC_portal_trios.csv")
 
 ff_vcf <- readVcf(file = "/Users/MartinaMijuskovic/FFPE/Trio_VCFs/LP3000067-DNA_E06_LP3000070-DNA_G01.somatic.SV.vcf.gz")
 ffpe_vcf <- readVcf(file = "/Users/MartinaMijuskovic/FFPE/Trio_VCFs/LP3000067-DNA_E06_LP3000079-DNA_B02.somatic.SV.vcf.gz")
-
-# Filter data
-as.data.frame(table(ff_vcf@fixed@listData$FILTER))
-as.data.frame(table(ffpe_vcf@fixed@listData$FILTER))
 
 # SV types by filter
 t(table(ff_vcf@info@listData$SVTYPE, ff_vcf@fixed@listData$FILTER, exclude = NULL))
@@ -529,12 +525,26 @@ table(ff_ffpe_merged$FF, ff_ffpe_merged$SVTYPE)
 
 ############  Compare filtered MANTA SVs ############
 
-### Prepare filtering (wMasker)
+### Prepare filtering (on HPC)
 
-# Convert WindowMasker to BED format (do on HPC)
+# Convert WindowMasker to BED format
 wMasker <- read.table("/home/mmijuskovic/FFPE/windowmaskerSdust.hg38.txt", header = F)
 wMasker <- wMasker %>% select(-(V1))
-write.table(wMasker, file = "windowmaskerSdust.hg38.bed", row.names = F, col.names = F)
+write.table(wMasker, file = "windowmaskerSdust.hg38.bed", row.names = F, col.names = F, quote = F, sep = "\t")
+
+# Simple repeats
+repeats <- read.table("/home/mmijuskovic/FFPE/simpleRepeat.hg38.txt", header = F)
+repeats <- repeats %>% select(-(V1))
+repeats <- repeats %>% select(1:4)
+write.table(repeats, file = "/home/mmijuskovic/FFPE/simpleRepeat.hg38.bed", row.names = F, col.names = F, quote = F, sep = "\t")
+
+# Segmental duplications
+seg_dups <- read.table("/home/mmijuskovic/FFPE/genomicSuperDups.hg38.txt", header = F)
+seg_dups <- seg_dups %>% select(-(V1))
+seg_dups <- seg_dups %>% select(1:4)
+write.table(seg_dups, file = "/home/mmijuskovic/FFPE/genomicSuperDups.hg38.bed", row.names = F, col.names = F,  quote = F, sep = "\t")
+
+
 
 # Add new type coding ("+" is FF, "-" is FFPE)
 ff_ffpe_merged$Type2 <- NA
@@ -542,9 +552,6 @@ ff_ffpe_merged$Type2 <- sapply(1:dim(ff_ffpe_merged)[1], function(x){
   if (ff_ffpe_merged$FF[x] == "FF") {ff_ffpe_merged$Type2[x] <- "+"}
   else if (ff_ffpe_merged$FF[x] == "FFPE") {ff_ffpe_merged$Type2[x] <- "-"}
 })
-
-
-
 
 # Create a bed file with SVs, start and end separately, remove NAs, code FF and FFPE as strand ("+" for FF, "-" for FFPE)
 # Note that START has to be adjusted to 0-based (-1) and end is not included (stays same)
@@ -569,7 +576,8 @@ end_bed$start <- end_bed$start - 151
 end_bed$END <- end_bed$END + 150
 write.table(end_bed, file = "sv_end.bed", quote = F, row.names = F, col.names = F, sep = "\t")
 
-# Call bedtools to find overlaps with WindowMasker 
+
+### Call bedtools to find overlaps with WindowMasker 
 # start
 system('bedtools coverage -a sv_start.bed -b windowmaskerSdust.hg38.bed > sv_wMasker_start_overlap.bed', intern = T)
 sv_wMasker_start <- read.table("sv_wMasker_start_overlap.bed", sep = "\t")
@@ -586,7 +594,57 @@ length(wMasker_keys) # 916 of 982 filtered out
 # Filter out SVs where START or END overlaps with WindowMasker
 ff_ffpe_merged$wMasker_filtered <- 0
 ff_ffpe_merged[(ff_ffpe_merged$KEY %in% wMasker_keys),]$wMasker_filtered <- 1
-ff_ffpe_merged_fil <- ff_ffpe_merged %>% filter(wMasker_filtered == 0)
+
+
+### Call bedtools to find overlaps with simple repeats
+
+# start
+system('bedtools coverage -a sv_start.bed -b simpleRepeat.hg38.bed > sv_repeats_start_overlap.bed', intern = T)
+sv_repeats_start <- read.table("sv_repeats_start_overlap.bed", sep = "\t")
+names(sv_repeats_start) <- c(names(start_bed), "NumOverlap", "BPoverlap", "BPTotal", "PCT")
+# end
+system('bedtools coverage -a sv_end.bed -b simpleRepeat.hg38.bed > sv_repeats_end_overlap.bed', intern = T)
+sv_repeats_end <- read.table("sv_repeats_end_overlap.bed", sep = "\t")
+names(sv_repeats_end) <- c(names(end_bed), "NumOverlap", "BPoverlap", "BPTotal", "PCT")
+
+# Collect KEYs with overlap
+repeats_keys <- unique(c(as.character(sv_repeats_start %>% filter(NumOverlap != 0) %>% .$KEY), as.character(sv_repeats_end %>% filter(NumOverlap != 0) %>% .$KEY)))
+length(repeats_keys) # 186 of 982 filtered out
+
+# Filter out SVs where START or END overlaps with repeats
+ff_ffpe_merged$repeats_filtered <- 0
+ff_ffpe_merged[(ff_ffpe_merged$KEY %in% repeats_keys),]$repeats_filtered <- 1
+
+
+
+### Call bedtools to find overlaps with segmental duplications
+
+# start
+system('bedtools coverage -a sv_start.bed -b genomicSuperDups.hg38.bed > sv_segdups_start_overlap.bed', intern = T)
+sv_segdups_start <- read.table("sv_segdups_start_overlap.bed", sep = "\t")
+names(sv_segdups_start) <- c(names(start_bed), "NumOverlap", "BPoverlap", "BPTotal", "PCT")
+# end
+system('bedtools coverage -a sv_end.bed -b genomicSuperDups.hg38.bed > sv_segdups_end_overlap.bed', intern = T)
+sv_segdups_end <- read.table("sv_segdups_end_overlap.bed", sep = "\t")
+names(sv_segdups_end) <- c(names(end_bed), "NumOverlap", "BPoverlap", "BPTotal", "PCT")
+
+# Collect KEYs with overlap
+segdups_keys <- unique(c(as.character(sv_segdups_start %>% filter(NumOverlap != 0) %>% .$KEY), as.character(sv_segdups_end %>% filter(NumOverlap != 0) %>% .$KEY)))
+length(segdups_keys) # 45 of 982 filtered out
+
+# Filter out SVs where START or END overlaps with repeats
+ff_ffpe_merged$segdups_filtered <- 0
+ff_ffpe_merged[(ff_ffpe_merged$KEY %in% segdups_keys),]$segdups_filtered <- 1 
+
+
+
+### Apply all filtering
+
+# Check the distribution of filters
+table(ff_ffpe_merged$wMasker_filtered, ff_ffpe_merged$repeats_filtered, ff_ffpe_merged$segdups_filtered)
+
+# Remove filtered reads
+ff_ffpe_merged_fil <- ff_ffpe_merged %>% filter(wMasker_filtered == 0, repeats_filtered == 0, segdups_filtered == 0)
 
 # Flag breakends whose mates are filtered out
 ff_ffpe_merged_fil$MATEID <- as.character(ff_ffpe_merged_fil$MATEID)
@@ -598,6 +656,11 @@ ff_ffpe_merged_fil[ff_ffpe_merged_fil$SVTYPE == "BND",]$BND_MATE_FILTERED <- sap
 
 # Filter out BND where mate is filtered out
 ff_ffpe_merged_fil <- ff_ffpe_merged_fil %>% filter(is.na(BND_MATE_FILTERED) | BND_MATE_FILTERED == 0)
+
+
+
+
+### Summary SV comparison
 
 # Overview of leftover high quality SV candidates
 table(ff_ffpe_merged_fil$FF, ff_ffpe_merged_fil$SVTYPE)
@@ -615,6 +678,8 @@ ff_ffpe_merged_fil %>% filter(CONCORDANT == 1) %>% select(KEY, FF, PR_ALT, SR_AL
 
 # Check all filtered SVs
 ff_ffpe_merged_fil %>% select(KEY, FF, PR_ALT, SR_ALT, BND_DEPTH, MATE_BND_DEPTH, SVLEN)
+
+
 
 
 
