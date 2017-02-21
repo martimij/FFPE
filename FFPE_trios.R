@@ -643,19 +643,21 @@ ff_ffpe_merged[(ff_ffpe_merged$KEY %in% segdups_keys),]$segdups_filtered <- 1
 # Check the distribution of filters
 table(ff_ffpe_merged$wMasker_filtered, ff_ffpe_merged$repeats_filtered, ff_ffpe_merged$segdups_filtered)
 
-# Remove filtered reads
-ff_ffpe_merged_fil <- ff_ffpe_merged %>% filter(wMasker_filtered == 0, repeats_filtered == 0, segdups_filtered == 0)
+# Add a general FILTERED field
+ff_ffpe_merged$FILTERED <- 0
+filtered_id <- ff_ffpe_merged %>% filter((wMasker_filtered == 1) | (repeats_filtered == 1) | (segdups_filtered == 1)) %>% .$ID
+ff_ffpe_merged[ff_ffpe_merged$ID %in% filtered_id,]$FILTERED <- 1
 
 # Flag breakends whose mates are filtered out
-ff_ffpe_merged_fil$MATEID <- as.character(ff_ffpe_merged_fil$MATEID)
-ff_ffpe_merged_fil$BND_MATE_FILTERED <- NA
-ff_ffpe_merged_fil[ff_ffpe_merged_fil$SVTYPE == "BND",]$BND_MATE_FILTERED <- sapply(1:dim(ff_ffpe_merged_fil[ff_ffpe_merged_fil$SVTYPE == "BND",])[1], function(x){
-  if (ff_ffpe_merged_fil[ff_ffpe_merged_fil$SVTYPE == "BND",]$MATEID[x] %in% ff_ffpe_merged_fil$ID) { return(0)}
-  else {return(1)}
+ff_ffpe_merged$MATEID <- as.character(ff_ffpe_merged$MATEID)
+ff_ffpe_merged$BND_MATE_FILTERED <- NA
+ff_ffpe_merged[ff_ffpe_merged$SVTYPE == "BND",]$BND_MATE_FILTERED <- sapply(1:dim(ff_ffpe_merged[ff_ffpe_merged$SVTYPE == "BND",])[1], function(x){
+  if (ff_ffpe_merged[ff_ffpe_merged$SVTYPE == "BND",]$MATEID[x] %in% filtered_id) { return(1)}
+  else {return(0)}
 })
 
-# Filter out BND where mate is filtered out
-ff_ffpe_merged_fil <- ff_ffpe_merged_fil %>% filter(is.na(BND_MATE_FILTERED) | BND_MATE_FILTERED == 0)
+# Remove filtered reads
+ff_ffpe_merged_fil <- ff_ffpe_merged %>% filter(wMasker_filtered == 0, repeats_filtered == 0, segdups_filtered == 0) %>% filter(is.na(BND_MATE_FILTERED) | BND_MATE_FILTERED == 0)
 
 
 
