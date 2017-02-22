@@ -1,10 +1,13 @@
 # Martina Mijuskovic
 # FFPE project
 # Reads the FFPE trio manifest, finds corresponding VCF files and compares Manta SVs between FF and FFPE using bedtools (on HPC)
+# Installing R packages: use lib = "~/R/x86_64-pc-linux-gnu-library/3.3"
 
 library(dplyr)
 library(VariantAnnotation)
 library(reshape)
+library(ggplot2)
+library(scales)
 
 # Working directory on the HPC
 setwd("/home/mmijuskovic/FFPE/SV_trio_comparison")
@@ -275,5 +278,111 @@ result <- lapply(patientIDs, function(x){
 # Merge into one data frame
 result <- merge_recurse(result)
 
-# Overview of filtered concordant SVs
+# Write out the result
+write.table(result, file = paste0(today, "_SV_all", ".tsv"), row.names = F, quote = F, sep = "\t")
+
+# Read in the result
+result <- read.table("2017-02-22_SV_all.tsv", sep = "\t", header = T)
+
+# Overview of filtered concordant SVs (NOTE that BNDs are listed twice - each side as a separate BND, need to adjust for that)
 table(result[result$FILTERED ==0,]$PATIENT_ID, result[result$FILTERED ==0,]$CONCORDANT)
+result %>% filter(FILTERED == 0) %>% dplyr::select(PATIENT_ID, KEY, SVTYPE, SVLEN, FF, ID, MATEID, PR_ALT, SR_ALT, CONCORDANT)
+
+### Look at the recurrent DEL (MIR7155 gene)
+result %>% filter(FILTERED == 0, KEY == "chr11-64341843-64341923-DEL") %>% dplyr::select(PATIENT_ID, KEY, SVTYPE, SVLEN, FF, ID, MATEID, PR_ALT, SR_ALT, CONCORDANT)
+# By PATIENT_ID
+length(unique(result %>% filter(FILTERED == 0, KEY == "chr11-64341843-64341923-DEL") %>% .$PATIENT_ID))
+# By FF/FFPE (non-condordant)
+table(result %>% filter(FILTERED == 0, CONCORDANT == 0, KEY == "chr11-64341843-64341923-DEL") %>% .$FF)
+
+# For each SV, check how many unique PATIENT IDs is IN
+dim(result %>% filter(FILTERED == 0))  # 139 total fitered SVs
+unique_keys <- as.character(unique(result %>% filter(FILTERED == 0) %>% .$KEY))  # 62 unique KEYs
+result$KEY <- as.character(result$KEY)
+recurrent_SVs <- data.frame(
+  NUM_OBS = sapply(unique_keys, function(x){ sum(result$KEY == x)}), 
+  NUM_PATIENTS = sapply(unique_keys, function(x){ length(unique(result %>% filter(KEY == x) %>% .$PATIENT_ID)) })
+  )
+recurrent_SVs$KEY <- rownames(recurrent_SVs)
+rownames(recurrent_SVs) <- NULL
+table(recurrent_SVs$NUM_PATIENTS)  # 3 observed in >1 patient (3, 16 and 22 patients)
+recurr_KEYs <- recurrent_SVs %>% filter(NUM_PATIENTS >1) %>% .$KEY
+recurrent_SVs %>% filter(KEY %in% recurr_KEYs)
+result %>% filter(KEY %in% recurr_KEYs) %>% dplyr::select(KEY, SVLEN, SR_REF, SR_ALT, CONCORDANT, PATIENT_ID)
+
+### Remove 3 recurrent SVs and plot recall/precision per patient
+result_filt <- result %>% filter(FILTERED == 0, !(KEY %in% recurr_KEYs))  # 90 left
+
+# Table of concordance vs SVTYPE (note that concordant SV number is half of the number listed)
+table(result_filt$CONCORDANT, result_filt$SVTYPE)
+# Discordant SVs by sample type
+table(result_filt[result_filt$CONCORDANT == 0,]$FF, result_filt[result_filt$CONCORDANT ==0,]$SVTYPE)
+
+# Concordance by patient and SV type
+table(result_filt$CONCORDANT, result_filt$SVTYPE, result_filt$PATIENT_ID)
+
+
+
+
+### Put all data together (QC, SV)
+
+# Keep only one of BND mates (remove all with ID ending with "0")
+# NOTE that one SV has a mate missing from the original results file, possibly missing in the VCF --- CHECK THIS (MantaBND:341610:0:1:3:1:0:0)
+result_filt$ID <- as.character(result_filt$ID)
+result_filt$MATE <- sapply(1:dim(result_filt)[1], function(x){
+  strsplit(result_filt$ID[x], split = "[[:punct:]]")[[1]][length(strsplit(result_filt$ID[x], split = "[[:punct:]]")[[1]])]
+})
+result_filt <- result_filt %>% filter(!(SVTYPE == "BND" & MATE == "0"))  # 11 BND mates removed
+
+# Summarize SVs (SV count total, count FF only, count FFPE only, count overlap, recall, precision - per PATIENT_ID)
+SV_summary <- data.frame(
+  PATIENT_ID=(result_filt %>% group_by(PATIENT_ID) %>% summarise(n()))$PATIENT_ID,
+  TOTAL_SV=(result_filt %>% group_by(PATIENT_ID) %>% summarise(n()))$`n()`,
+  SV_OVERLAP=table(result_filt$PATIENT_ID, result_filt$CONCORDANT)[,2]/2,  # Fix, IDs skipped if no entries
+  SV_FF_ONLY=table(result_filt[result_filt$CONCORDANT == 0,]$PATIENT_ID, result_filt[result_filt$CONCORDANT == 0,]$FF)[,1]
+  SV_FFPE_ONLY=table(result_filt[result_filt$CONCORDANT == 0,]$PATIENT_ID, result_filt[result_filt$CONCORDANT == 0,]$FF)[,2]
+  )
+
+  
+######### ------ continue here 
+  
+# Add QC details to the SV summary table
+QC_table <- QC_portal_trios %>% filter(SAMPLE_TYPE == "FFPE") %>% select(PATIENT_ID, CENTER_CODE, TumorType, SAMPLE_WELL_ID, TUMOUR_PURITY, GC_DROP, AT_DROP, COVERAGE_HOMOGENEITY, CHIMERIC_PER, AV_FRAGMENT_SIZE_BP, MAPPING_RATE_PER)
+names(QC_table)[4:11] <- paste0("FFPE_", names(QC_table)[4:11])
+QC_table <- left_join(QC_table, (QC_portal_trios %>% filter(SAMPLE_TYPE == "FF") %>% select(PATIENT_ID, SAMPLE_WELL_ID, LIBRARY_TYPE, TUMOUR_PURITY, GC_DROP, AT_DROP, COVERAGE_HOMOGENEITY, CHIMERIC_PER, AV_FRAGMENT_SIZE_BP, MAPPING_RATE_PER)), by = "PATIENT_ID")
+names(QC_table)[12:20] <- paste0("FF_", names(QC_table)[12:20])
+CNV_summary <- left_join(CNV_summary, QC_table, by = "PATIENT_ID")
+
+# Calculate normalized overlap
+CNV_summary$BP_OVERLAP <- as.numeric(CNV_summary$BP_OVERLAP)
+CNV_summary$BP_FF_ONLY <- as.numeric(CNV_summary$BP_FF_ONLY)
+CNV_summary$BP_FFPE_ONLY <- as.numeric(CNV_summary$BP_FFPE_ONLY)
+CNV_summary$TOTAL_BP <- CNV_summary$BP_OVERLAP + CNV_summary$BP_FF_ONLY + CNV_summary$BP_FFPE_ONLY
+
+# Write the full table
+write.csv(CNV_summary, file = paste0("Full_CNV_summary_", today, ".csv"), row.names = F, quote = F)
+
+
+
+### Create plots
+
+# Blank theme
+blank <-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank())
+# Black regression line (linear model)
+regr_line <- geom_smooth(method = "lm", se = F, aes(group = 1), linetype = 2, col = "black", size = 0.5)
+
+# Barplots of overlapping and unique SVs (normalized) for all 26 trios
+# First recast the data (each of 3 bp values in separate row, with PATIENT_ID, with indexes 1-2-3), needs package "reshape"
+CNV_summary_m <- as.data.frame(t(CNV_summary %>% select(PATIENT_ID, BP_OVERLAP, BP_FF_ONLY, BP_FFPE_ONLY)))
+names(CNV_summary_m) <- CNV_summary_m[1,]
+CNV_summary_m <- CNV_summary_m[2:4,]
+CNV_summary_m <- melt(cbind(CNV_summary_m, ind = rownames(CNV_summary_m)), id.vars = c('ind'))
+# Plot (needs package "scales")
+ggplot(CNV_summary_m,aes(x = variable, y = value, fill = ind)) + geom_bar(position = "fill",stat = "identity") + scale_y_continuous(labels = percent_format()) + theme(axis.text.x=element_text(angle=45,hjust=1,vjust=1), axis.title = element_blank()) + theme(legend.title=element_blank()) + labs(x = "Patient ID", y = element_blank()) + blank
+
+
+
+
+
+
+

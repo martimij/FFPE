@@ -377,7 +377,8 @@ Manta_ff <- SVinfo_ff %>% filter(FILTER == "PASS", Application == "Manta")  # 20
 #SVinfo_ff %>% filter(Application == "Manta", FILTER == "MGE10kb") %>% select(CHR, START, END, IMPRECISE, SVLEN, PR_ALT, SR_ALT)
 
 # Remove unknown CHR from the table and add chrY
-normal_chr <- c(grep("chrUn", grep("chr", levels(factor(Manta_ff$CHR)), value = T), value = T, invert = T), "chrY")  
+#normal_chr <- c(grep("chrUn", grep("chr", levels(factor(Manta_ff$CHR)), value = T), value = T, invert = T), "chrY")  # missing chr, not clean
+normal_chr <- c(paste0("chr", 1:22), "chrX", "chrY")
 Manta_ff <- Manta_ff %>% filter(CHR %in% normal_chr)  # 200
 
 # Compare precise vs non-precise, look at range of supporting reads
