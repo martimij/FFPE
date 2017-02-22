@@ -75,7 +75,7 @@ compareSV <- function(patientID){
   Manta_ff <- SVinfo_ff %>% filter(FILTER == "PASS", Application == "Manta")
   
   # Remove unknown CHR from the table and add chrY
-  normal_chr <- c(grep("chrUn", grep("chr", levels(factor(Manta_ff$CHR)), value = T), value = T, invert = T), "chrY")  
+  normal_chr <- c(paste0("chr", 1:22), "chrX", "chrY")  
   Manta_ff <- Manta_ff %>% filter(CHR %in% normal_chr)
   
   # Filter out imprecise SVs for this purpose
@@ -257,25 +257,6 @@ compareSV <- function(patientID){
   ff_ffpe_merged$PATIENT_ID <- patientID
   write.table(ff_ffpe_merged, file = paste0(patientID, "_SV_filtered", ".tsv"), row.names = F, quote = F, sep = "\t")
 
-  
-  # ### Write the recall/precision summary table
-  # # Filtered SVs only
-  # ff_ffpe_merged_fil <- ff_ffpe_merged %>% filter(FILTERED == 0)
-  # # Make an empty data frame for results
-  # result <- data.frame(t(c(paste0(levels(factor(ff_ffpe_merged$SVTYPE)), "_FF"), 
-  #                    paste0(levels(factor(ff_ffpe_merged$SVTYPE)), "_FFPE"), 
-  #                    paste0(levels(factor(ff_ffpe_merged$SVTYPE)), "_CONCORDANT"), 
-  #                    paste0(levels(factor(ff_ffpe_merged$SVTYPE)), "_RECALL"), 
-  #                    paste0(levels(factor(ff_ffpe_merged$SVTYPE)), "_PRECISION"))))
-  # names(result) <- c(paste0(levels(factor(ff_ffpe_merged$SVTYPE)), "_FF"), 
-  #                    paste0(levels(factor(ff_ffpe_merged$SVTYPE)), "_FFPE"), 
-  #                    paste0(levels(factor(ff_ffpe_merged$SVTYPE)), "_CONCORDANT"), 
-  #                    paste0(levels(factor(ff_ffpe_merged$SVTYPE)), "_RECALL"), 
-  #                    paste0(levels(factor(ff_ffpe_merged$SVTYPE)), "_PRECISION"))
-  # result <- result[-1,]
-  # rownames(result) <- patientID
-  # result[,1:5] <- table(ff_ffpe_merged_fil[ff_ffpe_merged_fil$FF == "FFPE",]$SVTYPE)
-  # return(result)
 }  
 
 # Get all patient IDs
@@ -294,4 +275,5 @@ result <- lapply(patientIDs, function(x){
 # Merge into one data frame
 result <- merge_recurse(result)
 
-
+# Overview of filtered concordant SVs
+table(result[result$FILTERED ==0,]$PATIENT_ID, result[result$FILTERED ==0,]$CONCORDANT)
