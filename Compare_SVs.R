@@ -313,54 +313,72 @@ result %>% filter(KEY %in% recurr_KEYs) %>% dplyr::select(KEY, SVLEN, SR_REF, SR
 ### Remove 3 recurrent SVs and plot recall/precision per patient
 result_filt <- result %>% filter(FILTERED == 0, !(KEY %in% recurr_KEYs))  # 90 left
 
+### Recast the SV summary table for easier concordance calculations
+
+# Each row is a unique KEY of filtered SVs
+# sum(duplicated(result_filt$ID))
+# sum(duplicated(result_filt[result_filt$MATEID != "character(0)",]$MATEID))  # 0
+
+# Make a new unique breakend KEY consisting of two translocation mates; check that both mates are concordant/discordant
+result_filt$ID <- as.character(result_filt$ID)
+result_filt$MATEID <- as.character(result_filt$MATEID)
+result_filt$MAIN_ID  <- sapply(1:dim(result_filt)[1], function(x){
+  stop <- nchar(result_filt$ID[x])-1
+  substr(result_filt$ID[x], 1, stop)
+})
+
+# Check that there are always 2 BND for each MAIN_ID
+result_filt %>% group_by(MAIN_ID) %>% summarise(n())  # one BND is missing the mate (maybe mate is on uknown CHR?)
+
+# Remove BND that is missing the mate
+result_filt <- result_filt %>% filter(MAIN_ID != "MantaBND:341610:0:1:3:1:0:")
+
+# Keep only one BND mate
+result_filt <- result_filt[!duplicated(result_filt$MAIN_ID),]
+
+
+
+### Summarize SVs
+
+# Total unique SVs
+length(unique(result_filt$KEY))  # 51
 # Table of concordance vs SVTYPE (note that concordant SV number is half of the number listed)
 table(result_filt$CONCORDANT, result_filt$SVTYPE)
 # Discordant SVs by sample type
 table(result_filt[result_filt$CONCORDANT == 0,]$FF, result_filt[result_filt$CONCORDANT ==0,]$SVTYPE)
-
-# Concordance by patient and SV type
-table(result_filt$CONCORDANT, result_filt$SVTYPE, result_filt$PATIENT_ID)
-
-
+# Total FF SVs
+table(result_filt$FF)
+# Total concordant
+table(result_filt$CONCORDANT, result_filt$FF)
+# Total patients with any high confidence SV calls
+length(unique(result_filt$PATIENT_ID))  # 19
 
 
 ### Put all data together (QC, SV)
 
-# Keep only one of BND mates (remove all with ID ending with "0")
-# NOTE that one SV has a mate missing from the original results file, possibly missing in the VCF --- CHECK THIS (MantaBND:341610:0:1:3:1:0:0)
-result_filt$ID <- as.character(result_filt$ID)
-result_filt$MATE <- sapply(1:dim(result_filt)[1], function(x){
-  strsplit(result_filt$ID[x], split = "[[:punct:]]")[[1]][length(strsplit(result_filt$ID[x], split = "[[:punct:]]")[[1]])]
-})
-result_filt <- result_filt %>% filter(!(SVTYPE == "BND" & MATE == "0"))  # 11 BND mates removed
-
 # Summarize SVs (SV count total, count FF only, count FFPE only, count overlap, recall, precision - per PATIENT_ID)
 SV_summary <- data.frame(
   PATIENT_ID=(result_filt %>% group_by(PATIENT_ID) %>% summarise(n()))$PATIENT_ID,
-  TOTAL_SV=(result_filt %>% group_by(PATIENT_ID) %>% summarise(n()))$`n()`,
-  SV_OVERLAP=table(result_filt$PATIENT_ID, result_filt$CONCORDANT)[,2]/2,  # Fix, IDs skipped if no entries
-  SV_FF_ONLY=table(result_filt[result_filt$CONCORDANT == 0,]$PATIENT_ID, result_filt[result_filt$CONCORDANT == 0,]$FF)[,1]
-  SV_FFPE_ONLY=table(result_filt[result_filt$CONCORDANT == 0,]$PATIENT_ID, result_filt[result_filt$CONCORDANT == 0,]$FF)[,2]
-  )
+  TOTAL=(result_filt %>% group_by(PATIENT_ID) %>% summarise(n()))$`n()`,
+  TOTAL_FF=table(result_filt$PATIENT_ID, result_filt$FF)[,1],
+  TOTAL_FFPE=table(result_filt$PATIENT_ID, result_filt$FF)[,2],
+  OVERLAP=table(result_filt$PATIENT_ID, result_filt$CONCORDANT)[,2]/2)
 
-  
-######### ------ continue here 
+SV_summary$FF_ONLY <- SV_summary$TOTAL_FF - SV_summary$OVERLAP
+SV_summary$FFPE_ONLY <- SV_summary$TOTAL_FFPE - SV_summary$OVERLAP
+SV_summary$RECALL <- SV_summary$OVERLAP / SV_summary$TOTAL_FF
+SV_summary$PRECISION <- SV_summary$OVERLAP / SV_summary$TOTAL_FFPE
+
   
 # Add QC details to the SV summary table
-QC_table <- QC_portal_trios %>% filter(SAMPLE_TYPE == "FFPE") %>% select(PATIENT_ID, CENTER_CODE, TumorType, SAMPLE_WELL_ID, TUMOUR_PURITY, GC_DROP, AT_DROP, COVERAGE_HOMOGENEITY, CHIMERIC_PER, AV_FRAGMENT_SIZE_BP, MAPPING_RATE_PER)
+QC_table <- QC_portal_trios %>% filter(SAMPLE_TYPE == "FFPE") %>% dplyr::select(PATIENT_ID, CENTER_CODE, TumorType, SAMPLE_WELL_ID, TUMOUR_PURITY, GC_DROP, AT_DROP, COVERAGE_HOMOGENEITY, CHIMERIC_PER, AV_FRAGMENT_SIZE_BP, MAPPING_RATE_PER)
 names(QC_table)[4:11] <- paste0("FFPE_", names(QC_table)[4:11])
-QC_table <- left_join(QC_table, (QC_portal_trios %>% filter(SAMPLE_TYPE == "FF") %>% select(PATIENT_ID, SAMPLE_WELL_ID, LIBRARY_TYPE, TUMOUR_PURITY, GC_DROP, AT_DROP, COVERAGE_HOMOGENEITY, CHIMERIC_PER, AV_FRAGMENT_SIZE_BP, MAPPING_RATE_PER)), by = "PATIENT_ID")
+QC_table <- left_join(QC_table, (QC_portal_trios %>% filter(SAMPLE_TYPE == "FF") %>% dplyr::select(PATIENT_ID, SAMPLE_WELL_ID, LIBRARY_TYPE, TUMOUR_PURITY, GC_DROP, AT_DROP, COVERAGE_HOMOGENEITY, CHIMERIC_PER, AV_FRAGMENT_SIZE_BP, MAPPING_RATE_PER)), by = "PATIENT_ID")
 names(QC_table)[12:20] <- paste0("FF_", names(QC_table)[12:20])
-CNV_summary <- left_join(CNV_summary, QC_table, by = "PATIENT_ID")
-
-# Calculate normalized overlap
-CNV_summary$BP_OVERLAP <- as.numeric(CNV_summary$BP_OVERLAP)
-CNV_summary$BP_FF_ONLY <- as.numeric(CNV_summary$BP_FF_ONLY)
-CNV_summary$BP_FFPE_ONLY <- as.numeric(CNV_summary$BP_FFPE_ONLY)
-CNV_summary$TOTAL_BP <- CNV_summary$BP_OVERLAP + CNV_summary$BP_FF_ONLY + CNV_summary$BP_FFPE_ONLY
+SV_summary <- left_join(SV_summary, QC_table, by = "PATIENT_ID")
 
 # Write the full table
-write.csv(CNV_summary, file = paste0("Full_CNV_summary_", today, ".csv"), row.names = F, quote = F)
+write.csv(SV_summary, file = paste0("Full_SV_summary_", today, ".csv"), row.names = F, quote = F)
 
 
 
@@ -371,15 +389,95 @@ blank <-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_b
 # Black regression line (linear model)
 regr_line <- geom_smooth(method = "lm", se = F, aes(group = 1), linetype = 2, col = "black", size = 0.5)
 
-# Barplots of overlapping and unique SVs (normalized) for all 26 trios
+# Barplots of overlapping and unique SVs (normalized) for all 19 trios with SV calls
 # First recast the data (each of 3 bp values in separate row, with PATIENT_ID, with indexes 1-2-3), needs package "reshape"
-CNV_summary_m <- as.data.frame(t(CNV_summary %>% select(PATIENT_ID, BP_OVERLAP, BP_FF_ONLY, BP_FFPE_ONLY)))
-names(CNV_summary_m) <- CNV_summary_m[1,]
-CNV_summary_m <- CNV_summary_m[2:4,]
-CNV_summary_m <- melt(cbind(CNV_summary_m, ind = rownames(CNV_summary_m)), id.vars = c('ind'))
+SV_summary_m <- as.data.frame(t(SV_summary %>% dplyr::select(PATIENT_ID, OVERLAP, FF_ONLY, FFPE_ONLY)))
+names(SV_summary_m) <- SV_summary_m[1,]
+SV_summary_m <- SV_summary_m[2:4,]
+SV_summary_m <- melt(cbind(SV_summary_m, ind = rownames(SV_summary_m)), id.vars = c('ind'))
 # Plot (needs package "scales")
-ggplot(CNV_summary_m,aes(x = variable, y = value, fill = ind)) + geom_bar(position = "fill",stat = "identity") + scale_y_continuous(labels = percent_format()) + theme(axis.text.x=element_text(angle=45,hjust=1,vjust=1), axis.title = element_blank()) + theme(legend.title=element_blank()) + labs(x = "Patient ID", y = element_blank()) + blank
+ggplot(SV_summary_m, aes(x = variable, y = value, fill = ind)) + geom_bar(position = "fill",stat = "identity") + scale_y_continuous(labels = percent_format()) + theme(axis.text.x=element_text(angle=45,hjust=1,vjust=1), axis.title = element_blank()) + theme(legend.title=element_blank()) + labs(x = "Patient ID", y = element_blank()) + blank
 
+
+##############
+
+# Recall of FF vs recall of FFPE (recall vs precision)
+ggplot(SV_summary[complete.cases(SV_summary),], aes(x = RECALL, y = PRECISION)) + geom_jitter() + geom_smooth(method = "lm", se = T) + labs(x = "Percent Recall of FF", y = "Percent Recall of FFPE") 
+cor(SV_summary[complete.cases(SV_summary),]$RECALL, SV_summary[complete.cases(SV_summary),]$PRECISION, method = "spearman")  # 0.2496266
+
+# RECALL of FF by AT dropout/coverage homogeneity, chim reads, mapping rate of FFPE, colored by center
+ggplot(SV_summary, aes(x = RECALL, y = FFPE_AT_DROP, col = factor(CENTER_CODE))) + geom_jitter() + regr_line + labs(x = "Percent Recall of FF", y = "FFPE AT Dropout") + theme(legend.title=element_blank())
+cor(SV_summary[complete.cases(SV_summary),]$RECALL, SV_summary[complete.cases(SV_summary),]$FFPE_AT_DROP, method = "spearman")  # 0.1051732
+
+ggplot(SV_summary, aes(x = RECALL, y = FFPE_COVERAGE_HOMOGENEITY, col = factor(CENTER_CODE))) + geom_jitter() + regr_line + labs(x = "Percent Recall of FF", y = "FFPE Unevenness of Coverage") + theme(legend.title=element_blank())
+cor(SV_summary[complete.cases(SV_summary),]$RECALL, SV_summary[complete.cases(SV_summary),]$FFPE_COVERAGE_HOMOGENEITY, method = "spearman")  # 0.102608
+
+ggplot(SV_summary, aes(x = RECALL, y = FFPE_CHIMERIC_PER, col = factor(CENTER_CODE))) + geom_jitter() + regr_line + labs(x = "Percent Recall of FF", y = "FFPE % Chimeric") + theme(legend.title=element_blank())
+cor(SV_summary[complete.cases(SV_summary),]$RECALL, SV_summary[complete.cases(SV_summary),]$FFPE_CHIMERIC_PER, method = "spearman")  # -0.2978906
+
+ggplot(SV_summary, aes(x = RECALL, y = FFPE_MAPPING_RATE_PER, col = factor(CENTER_CODE))) + geom_jitter() + regr_line + labs(x = "Percent Recall of FF", y = "FFPE Mapping Rate") + theme(legend.title=element_blank())
+cor(SV_summary[complete.cases(SV_summary),]$RECALL, SV_summary[complete.cases(SV_summary),]$FFPE_MAPPING_RATE_PER, method = "spearman")  # 0.1513467
+
+# Recall by fragment size
+ggplot(SV_summary, aes(x = RECALL, y = FFPE_AV_FRAGMENT_SIZE_BP, col = factor(TumorType))) + geom_jitter() + labs(x = "Percent SV Recall", y = "FFPE Fragment Size") + theme(legend.title=element_blank()) + regr_line
+cor(SV_summary[complete.cases(SV_summary),]$RECALL, SV_summary[complete.cases(SV_summary),]$FFPE_AV_FRAGMENT_SIZE_BP, method = "spearman")  # -0.4822574
+
+
+
+# Recall of FF by AT dropout of FFPE, colored by tumor type (not very informative)
+# ggplot(SV_summary, aes(x = RECALL, y = FFPE_AT_DROP, col = factor(TumorType))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "FFPE AT Dropout") + theme(legend.title=element_blank())
+# ggplot(SV_summary, aes(x = RECALL, y = FFPE_COVERAGE_HOMOGENEITY, col = factor(TumorType))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "FFPE Unevenness of Coverage") + theme(legend.title=element_blank())
+
+# Recall by tumor purity (not very informative)
+ggplot(SV_summary, aes(x = RECALL, y = FFPE_TUMOUR_PURITY, col = factor(TumorType))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "FFPE Tumour Purity")  + theme(legend.title=element_blank()) + regr_line
+cor(SV_summary[complete.cases(SV_summary),]$RECALL, SV_summary[complete.cases(SV_summary),]$FFPE_TUMOUR_PURITY, method = "spearman")  # -0.01158164
+
+# ggplot(SV_summary, aes(x = RECALL, y = FF_TUMOUR_PURITY, col = factor(TumorType))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "FF Tumour Purity")  + theme(legend.title=element_blank()) + regr_line
+# 
+# # Recall by high vs low FF and FFPE purity (both > 50) (not very informative)
+# ggplot(SV_summary, aes(x = RECALL, y = FFPE_AT_DROP, col = factor((FFPE_TUMOUR_PURITY > 50) & (FF_TUMOUR_PURITY > 50)))) + geom_jitter() + labs(x = "Percent Recall of FF", y = "FFPE AT Dropout") + theme(legend.title=element_blank())
+
+# # Divide samples into good and bad FF recall (>50%), see which variables make a difference (not very informative)
+# ggplot(data=SV_summary, aes(x=(RECALL>=0.5), y=FFPE_AT_DROP, fill=(RECALL>=0.5))) + geom_boxplot() + geom_jitter() + labs(x = "High SV Recall (>=50%)", y = "FFPE AT Dropout") + theme(legend.title=element_blank())
+# ggplot(data=SV_summary, aes(x=(RECALL>=0.5), y=FFPE_COVERAGE_HOMOGENEITY, fill=(RECALL>=0.5))) + geom_boxplot() + geom_jitter() + labs(x = "High SV Recall (>=50%)", y = "FFPE Unevenness of Coverage") + theme(legend.title=element_blank())
+# ggplot(data=SV_summary, aes(x=(RECALL>=0.5), y=FFPE_TUMOUR_PURITY, fill=(RECALL>=0.5))) + geom_boxplot() + geom_jitter() + labs(x = "High SV Recall (>=50%)", y = "FFPE Tumour Purity") + theme(legend.title=element_blank())
+# ggplot(data=SV_summary, aes(x=(RECALL>=0.5), y=FF_TUMOUR_PURITY, fill=(RECALL>=0.5))) + geom_boxplot() + geom_jitter() + labs(x = "High SV Recall (>=50%)", y = "FF Tumour Purity") + theme(legend.title=element_blank())
+
+# # Recall by % chimeric fragments
+# ggplot(data=SV_summary, aes(x=(RECALL>=0.5), y=FFPE_CHIMERIC_PER, fill=(RECALL>=0.5))) + geom_boxplot() + geom_jitter() + labs(x = "High SV Recall (>=50%)", y = "FFPE Chimeric Frag") + theme(legend.title=element_blank())
+# # Recall by tumor type (not enough data...)
+# ggplot(data=SV_summary, aes(x=TumorType, y=RECALL)) + geom_boxplot() + geom_jitter(aes(col = TumorType)) + labs(x = "Tumor Type", y = "Percent SV Recall") + theme(legend.title=element_blank())
+# # Recall by GMC, color by tumor type
+# ggplot(data=SV_summary, aes(x=CENTER_CODE, y=RECALL)) + geom_boxplot() + geom_jitter(aes(col = TumorType)) + labs(x = "GMC", y = "Percent SV Recall") + theme(legend.title=element_blank())
+# # Recall by FF library type
+# ggplot(data=SV_summary, aes(x=FF_LIBRARY_TYPE, y=RECALL)) + geom_boxplot() + geom_jitter(aes(col = TumorType)) + labs(x = "FF Library Type", y = "Percent SV Recall") + theme(legend.title=element_blank())
+
+
+
+
+# PRECISION by AT dropout/coverage homogeneity, chim reads, mapping rate of FFPE, colored by center
+ggplot(SV_summary, aes(x = PRECISION, y = FFPE_AT_DROP, col = factor(CENTER_CODE))) + geom_jitter() + regr_line + labs(x = "Precision", y = "FFPE AT Dropout") + theme(legend.title=element_blank())
+cor(SV_summary[complete.cases(SV_summary),]$PRECISION, SV_summary[complete.cases(SV_summary),]$FFPE_AT_DROP, method = "spearman")  # -0.007730393
+
+ggplot(SV_summary, aes(x = PRECISION, y = FFPE_COVERAGE_HOMOGENEITY, col = factor(CENTER_CODE))) + geom_jitter() + regr_line + labs(x = "Precision", y = "FFPE Unevenness of Coverage") + theme(legend.title=element_blank())
+cor(SV_summary[complete.cases(SV_summary),]$PRECISION, SV_summary[complete.cases(SV_summary),]$FFPE_COVERAGE_HOMOGENEITY, method = "spearman")  # -0.07988073
+
+ggplot(SV_summary, aes(x = PRECISION, y = FFPE_CHIMERIC_PER, col = factor(CENTER_CODE))) + geom_jitter() + regr_line + labs(x = "Precision", y = "FFPE % Chimeric") + theme(legend.title=element_blank())
+cor(SV_summary[complete.cases(SV_summary),]$PRECISION, SV_summary[complete.cases(SV_summary),]$FFPE_CHIMERIC_PER, method = "spearman")  # -0.472073
+
+ggplot(SV_summary, aes(x = PRECISION, y = FFPE_MAPPING_RATE_PER, col = factor(CENTER_CODE))) + geom_jitter() + regr_line + labs(x = "Precision", y = "FFPE Mapping Rate") + theme(legend.title=element_blank())
+cor(SV_summary[complete.cases(SV_summary),]$PRECISION, SV_summary[complete.cases(SV_summary),]$FFPE_MAPPING_RATE_PER, method = "spearman")  # -0.4097108
+
+# Precision by tumor purity (not informative)
+ggplot(SV_summary, aes(x = PRECISION, y = FFPE_TUMOUR_PURITY, col = factor(TumorType))) + geom_jitter() + labs(x = "Precision", y = "FFPE Tumour Purity")  + theme(legend.title=element_blank()) + regr_line
+cor(SV_summary[complete.cases(SV_summary),]$PRECISION, SV_summary[complete.cases(SV_summary),]$FFPE_TUMOUR_PURITY, method = "spearman")  # 0.05429203
+# PRECISION by GMC, color by tumor type (not informative)
+ggplot(data=SV_summary, aes(x=CENTER_CODE, y=PRECISION)) + geom_boxplot() + geom_jitter(aes(col = TumorType)) + labs(x = "GMC", y = "Precision") + theme(legend.title=element_blank())
+# PRECISION by FF library type (not informative)
+ggplot(data=SV_summary, aes(x=FF_LIBRARY_TYPE, y=PRECISION)) + geom_boxplot() + geom_jitter(aes(col = TumorType)) + labs(x = "FF Library Type", y = "Precision") + theme(legend.title=element_blank())
+# PRECISION by FFPE fragment size
+ggplot(SV_summary, aes(x = PRECISION, y = FFPE_AV_FRAGMENT_SIZE_BP, col = factor(TumorType))) + geom_jitter() + labs(x = "Precision", y = "FFPE Fragment Size") + theme(legend.title=element_blank()) + regr_line
+cor(SV_summary[complete.cases(SV_summary),]$PRECISION, SV_summary[complete.cases(SV_summary),]$FFPE_AV_FRAGMENT_SIZE_BP, method = "spearman")  # -0.4822574
 
 
 
