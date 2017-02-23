@@ -1,7 +1,10 @@
 # Martina Mijuskovic
 # FFPE project
 # Reads the FFPE trio manifest, finds corresponding VCF files and compares Manta SVs between FF and FFPE using bedtools (on HPC)
-# Installing R packages: use lib = "~/R/x86_64-pc-linux-gnu-library/3.3"
+# Various SV summaries and plots
+
+
+# NOTE: Installing R packages on HPC: use lib = "~/R/x86_64-pc-linux-gnu-library/3.3"
 
 library(dplyr)
 library(VariantAnnotation)
@@ -11,6 +14,9 @@ library(scales)
 
 # Working directory on the HPC
 setwd("/home/mmijuskovic/FFPE/SV_trio_comparison")
+
+
+######### Compile and filter Manta SVs ######### 
 
 today <- Sys.Date()
 
@@ -27,7 +33,7 @@ QC_portal_trios$VCF_path <- as.character(sapply(QC_portal_trios$BamPath, functio
 }))
 
 
-### Function that compares SVs from FFPE trios
+# Function that compares SVs from FFPE trios
 # Extracts only precise SVs that pass Manta filters, from regular chromosomes, with at least 3 supporting reads (either 3 PR or 3 SR minimum)
 # Filters out SVs overlapping windowMasker, simple repeats or segmental duplications (either end of SV)
 # Writes out the filtered SV table
@@ -180,8 +186,8 @@ compareSV <- function(patientID){
   write.table(end_bed, file = paste0(patientID, "_sv_end.bed"), quote = F, row.names = F, col.names = F, sep = "\t")
   
   
-  #############
   ### Call bedtools to find overlaps with WindowMasker 
+  
   # start
   system(paste("/home/mmijuskovic/bedtools2/bin/bedtools coverage -a", paste0(patientID, "_sv_start.bed"), "-b /home/mmijuskovic/FFPE/windowmaskerSdust.hg38.bed >", paste0(patientID, "_sv_wMasker_start_overlap.bed")), intern = T)
   sv_wMasker_start <- read.table(paste0(patientID, "_sv_wMasker_start_overlap.bed"), sep = "\t")
@@ -281,6 +287,9 @@ result <- merge_recurse(result)
 # Write out the result
 write.table(result, file = paste0(today, "_SV_all", ".tsv"), row.names = F, quote = F, sep = "\t")
 
+
+######### Check and clean SVs ######### 
+
 # Read in the result
 result <- read.table("2017-02-22_SV_all.tsv", sep = "\t", header = T)
 
@@ -288,12 +297,12 @@ result <- read.table("2017-02-22_SV_all.tsv", sep = "\t", header = T)
 table(result[result$FILTERED ==0,]$PATIENT_ID, result[result$FILTERED ==0,]$CONCORDANT)
 result %>% filter(FILTERED == 0) %>% dplyr::select(PATIENT_ID, KEY, SVTYPE, SVLEN, FF, ID, MATEID, PR_ALT, SR_ALT, CONCORDANT)
 
-### Look at the recurrent DEL (MIR7155 gene)
-result %>% filter(FILTERED == 0, KEY == "chr11-64341843-64341923-DEL") %>% dplyr::select(PATIENT_ID, KEY, SVTYPE, SVLEN, FF, ID, MATEID, PR_ALT, SR_ALT, CONCORDANT)
-# By PATIENT_ID
-length(unique(result %>% filter(FILTERED == 0, KEY == "chr11-64341843-64341923-DEL") %>% .$PATIENT_ID))
-# By FF/FFPE (non-condordant)
-table(result %>% filter(FILTERED == 0, CONCORDANT == 0, KEY == "chr11-64341843-64341923-DEL") %>% .$FF)
+# ### Look at the recurrent DEL (MIR7155 gene)
+# result %>% filter(FILTERED == 0, KEY == "chr11-64341843-64341923-DEL") %>% dplyr::select(PATIENT_ID, KEY, SVTYPE, SVLEN, FF, ID, MATEID, PR_ALT, SR_ALT, CONCORDANT)
+# # By PATIENT_ID
+# length(unique(result %>% filter(FILTERED == 0, KEY == "chr11-64341843-64341923-DEL") %>% .$PATIENT_ID))
+# # By FF/FFPE (non-condordant)
+# table(result %>% filter(FILTERED == 0, CONCORDANT == 0, KEY == "chr11-64341843-64341923-DEL") %>% .$FF)
 
 # For each SV, check how many unique PATIENT IDs is IN
 dim(result %>% filter(FILTERED == 0))  # 139 total fitered SVs
@@ -338,7 +347,7 @@ result_filt <- result_filt[!duplicated(result_filt$MAIN_ID),]
 
 
 
-### Summarize SVs
+#########  Summarize SVs, add QC data ######### 
 
 # Total unique SVs
 length(unique(result_filt$KEY))  # 51
@@ -382,7 +391,7 @@ write.csv(SV_summary, file = paste0("Full_SV_summary_", today, ".csv"), row.name
 
 
 
-### Create plots
+#########  Create plots #########  
 
 # Blank theme
 blank <-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank())
@@ -399,7 +408,6 @@ SV_summary_m <- melt(cbind(SV_summary_m, ind = rownames(SV_summary_m)), id.vars 
 ggplot(SV_summary_m, aes(x = variable, y = value, fill = ind)) + geom_bar(position = "fill",stat = "identity") + scale_y_continuous(labels = percent_format()) + theme(axis.text.x=element_text(angle=45,hjust=1,vjust=1), axis.title = element_blank()) + theme(legend.title=element_blank()) + labs(x = "Patient ID", y = element_blank()) + blank
 
 
-##############
 
 # Recall of FF vs recall of FFPE (recall vs precision)
 ggplot(SV_summary[complete.cases(SV_summary),], aes(x = RECALL, y = PRECISION)) + geom_jitter() + geom_smooth(method = "lm", se = T) + labs(x = "Percent Recall of FF", y = "Percent Recall of FFPE") 
@@ -480,7 +488,13 @@ ggplot(SV_summary, aes(x = PRECISION, y = FFPE_AV_FRAGMENT_SIZE_BP, col = factor
 cor(SV_summary[complete.cases(SV_summary),]$PRECISION, SV_summary[complete.cases(SV_summary),]$FFPE_AV_FRAGMENT_SIZE_BP, method = "spearman")  # -0.4822574
 
 
+### Read support for high confidence SVs
 
+# Median read support by SV type
+result_filt %>% group_by(SVTYPE) %>% summarise(median(SR_ALT), median(SR_REF), median(PR_ALT), median(PR_REF))
 
+# Concordant SVs, support in FF and FFPE
+ggplot((result_filt %>% filter(CONCORDANT == 1)), aes(x=factor(SVTYPE), y=PR_ALT)) + geom_boxplot(aes(colour = factor(FF))) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Paired Reads")
+ggplot((result_filt %>% filter(CONCORDANT == 1)), aes(x=factor(SVTYPE), y=SR_ALT)) + geom_boxplot(aes(colour = factor(FF))) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Split Reads")
 
 

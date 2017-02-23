@@ -1,7 +1,8 @@
 # Martina Mijuskovic
 # FFPE project
 # Collect QC and clinical data for sequenced FFPE trios
-# Develop the comparison method for Canvas CNV output between FF and FFPE samples
+# Development of the comparison method for Canvas CNV output between FF and FFPE samples
+# Development of the comparison method for Manta SV output between FF and FFPE samples
 
 library("data.table")
 library("dplyr")
