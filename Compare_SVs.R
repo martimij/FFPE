@@ -391,7 +391,7 @@ write.csv(SV_summary, file = paste0("Full_SV_summary_", today, ".csv"), row.name
 
 
 
-#########  Create plots #########  
+#########  Create plots and tables #########  
 
 # Blank theme
 blank <-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank())
@@ -492,9 +492,83 @@ cor(SV_summary[complete.cases(SV_summary),]$PRECISION, SV_summary[complete.cases
 
 # Median read support by SV type
 result_filt %>% group_by(SVTYPE) %>% summarise(median(SR_ALT), median(SR_REF), median(PR_ALT), median(PR_REF))
-
 # Concordant SVs, support in FF and FFPE
 ggplot((result_filt %>% filter(CONCORDANT == 1)), aes(x=factor(SVTYPE), y=PR_ALT)) + geom_boxplot(aes(colour = factor(FF))) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Paired Reads")
 ggplot((result_filt %>% filter(CONCORDANT == 1)), aes(x=factor(SVTYPE), y=SR_ALT)) + geom_boxplot(aes(colour = factor(FF))) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Split Reads")
 
 
+#########  Overview of filtered SVs #########  
+
+# Remove the BND with a filtered mate (discovered above) -- checked VCF; mate maps to unkn chr
+result <- result %>% filter(ID != "MantaBND:341610:0:1:3:1:0:1")
+
+# Create a filter variable
+result$FILTER2 <- sapply(1:dim(result)[1], function(x) {
+  if (result$wMasker_filtered[x] == 1) {"wMasker"} 
+  else if (result$repeats_filtered[x] == 1) {"simple_rep"} 
+  else if (result$segdups_filtered[x] == 1) {"seg_dupl"} 
+  else if ((!is.na(result$BND_MATE_FILTERED[x])) & result$BND_MATE_FILTERED[x] == 1) {"mate_filtered"}
+  else {"PASS"}
+})
+table(result$FILTER2, result$SVTYPE)
+
+
+#########  Overlap with Domain 1, 2 genes #########  
+
+# Read tables containing Domain 1 (actionable) and Domain 2 (cancer census) genes
+domain1 <- 
+domain2 <-
+
+# Read the gene/transcript annotations from the VCF file (HPC)
+genesFromVCF <- function(patientID){
+  
+  # Get FF and FFPE VCF paths for specified patient ID and read into a Large CollapsedVCF object (VariantAnnotation package)
+  ff_path <- QC_portal_trios %>% filter(PATIENT_ID == patientID, SAMPLE_TYPE == "FF") %>% .$VCF_path
+  ffpe_path <- QC_portal_trios %>% filter(PATIENT_ID == patientID, SAMPLE_TYPE == "FFPE") %>% .$VCF_path
+  ff_vcf <- readVcf(ff_path)
+  ffpe_vcf <- readVcf(ffpe_path)
+  
+  ### FF info
+  # Extract info fields
+  SVinfo_ff <- as.data.frame(info(ff_vcf))
+  # Get FILTER field
+  SVinfo_ff$FILTER <- rowRanges(ff_vcf)$FILTER
+  # Create Application variable (Canvas or Manta?)
+  SVinfo_ff$Application <- ""
+  SVinfo_ff[grepl("Canvas", rownames(SVinfo_ff)),]$Application <- "Canvas"
+  SVinfo_ff[grepl("Manta", rownames(SVinfo_ff)),]$Application <- "Manta"
+  # Extract ID
+  SVinfo_ff$ID <- rownames(SVinfo_ff)
+  # Remove filtered entries, keep Manta only, keep only ID and CSQT
+  Manta_ff <- SVinfo_ff %>% filter(FILTER == "PASS", Application == "Manta") %>% dplyr::select(ID, CSQT)
+  
+  ### FFPE info
+  # Extract INFO table (all SVs)
+  SVinfo_ffpe <- as.data.frame(info(ffpe_vcf))
+  # Add filter field
+  SVinfo_ffpe$FILTER <- rowRanges(ffpe_vcf)$FILTER
+  # Create Application variable (Canvas or Manta?)
+  SVinfo_ffpe$Application <- ""
+  SVinfo_ffpe[grepl("Canvas", rownames(SVinfo_ffpe)),]$Application <- "Canvas"
+  SVinfo_ffpe[grepl("Manta", rownames(SVinfo_ffpe)),]$Application <- "Manta"
+  # Extract ID
+  SVinfo_ffpe$ID <- rownames(SVinfo_ffpe)
+  # Remove filtered entries, keep Manta only, keep only ID and CSQT
+  Manta_ffpe <- SVinfo_ffpe %>% filter(FILTER == "PASS", Application == "Manta") %>% dplyr::select(ID, CSQT)
+  
+  # Merge FF and FFPE into one table, keep info on SV source (FF or FFPE?)
+  Manta_ff$FF <- "FF"
+  Manta_ffpe$FF <- "FFPE"
+  ff_ffpe_merged <- rbind(Manta_ff, Manta_ffpe)
+  
+  # Add PATIENT_ID
+  ff_ffpe_merged$PATIENT_ID <- patientID
+  
+  # Write out the R object
+  save(list = ff_ffpe_merged, file = paste0(patientID, "_SV_genes", ".RData"))
+  
+}
+  
+# Compile all gene/transcript info, parse
+
+# Add gene info to SV result, list overlaps
