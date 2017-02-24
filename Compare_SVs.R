@@ -342,12 +342,27 @@ result_filt %>% group_by(MAIN_ID) %>% summarise(n())  # one BND is missing the m
 # Remove BND that is missing the mate
 result_filt <- result_filt %>% filter(MAIN_ID != "MantaBND:341610:0:1:3:1:0:")
 
+# Add MATE_KEY
+result_filt$KEY <- as.character(result_filt$KEY)
+result_filt$ID <- as.character(result_filt$ID)
+result_filt$MATEID <- as.character(result_filt$MATEID)
+result_filt$MATE_KEY <- NA
+result_filt[result_filt$SVTYPE == "BND",]$MATE_KEY <- sapply(1:dim(result_filt[result_filt$SVTYPE == "BND",])[1], function(x){
+  result_filt[result_filt$ID == (result_filt[result_filt$SVTYPE == "BND",]$MATEID[x]),]$KEY
+})
+
 # Keep only one BND mate
 result_filt <- result_filt[!duplicated(result_filt$MAIN_ID),]
 
+# Add TUMOR TYPE
+result_filt$TumorType <- QC_portal_trios[match(result_filt$PATIENT_ID, QC_portal_trios$PATIENT_ID),]$TumorType
 
 
 #########  Summarize SVs, add QC data ######### 
+
+# List unique SVs to be reviewed manually
+result_filt[(!duplicated(result_filt$KEY)),] %>% dplyr::select(PATIENT_ID, TumorType, FF, KEY, MATE_KEY, ID, SVLEN, CIGAR, HOMLEN, LEFT_SVINSSEQ, RIGHT_SVINSSEQ, SOMATICSCORE, PR_ALT, SR_ALT, CONCORDANT)
+write.table((result_filt[(!duplicated(result_filt$KEY)),] %>% dplyr::select(PATIENT_ID, TumorType, FF, KEY, MATE_KEY, ID, SVLEN, CIGAR, HOMLEN, LEFT_SVINSSEQ, RIGHT_SVINSSEQ, SOMATICSCORE, PR_ALT, SR_ALT, CONCORDANT)), quote = F, row.names = F, sep = "\t", file = "HighConf_SVs_FFPE_trios.tsv")
 
 # Total unique SVs
 length(unique(result_filt$KEY))  # 51
