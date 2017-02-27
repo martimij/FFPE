@@ -531,13 +531,22 @@ table(result$FILTER2, result$SVTYPE)
 #########  Overlap with Domain 1, 2 genes #########  
 
 # Read tables containing Domain 1 (actionable) and Domain 2 (cancer census) genes
-domain1 <- 
-domain2 <-
+domain1 <- read.csv("ACTIONABLE_GENES_IN_SOLID_TUMOUR.v1.2.csv")
+domain2 <- read.csv("CANCER_CENSUS_GENES.v1.2.csv")
+
+# Check and examine duplicated IDs (note that some genes appear duplicated since they exist on alt haplotypes; they will have different gene_ID)
+sum(duplicated(domain1$gene_name)) # 12
+sum(duplicated(domain1$transcript_ID))  # 10
+sum(duplicated(domain1$gene_ID_ID))  # 0
+sum(duplicated(domain2$gene_name)) # 46
+sum(duplicated(domain2$transcript_ID))  # 0
+sum(duplicated(domain2$gene_ID_ID))  # 0
 
 # Read the gene/transcript annotations from the VCF file (HPC)
 genesFromVCF <- function(patientID){
   
   # Get FF and FFPE VCF paths for specified patient ID and read into a Large CollapsedVCF object (VariantAnnotation package)
+  # Need to read QC_portal_trios separately, clean and add VCF paths
   ff_path <- QC_portal_trios %>% filter(PATIENT_ID == patientID, SAMPLE_TYPE == "FF") %>% .$VCF_path
   ffpe_path <- QC_portal_trios %>% filter(PATIENT_ID == patientID, SAMPLE_TYPE == "FFPE") %>% .$VCF_path
   ff_vcf <- readVcf(ff_path)
@@ -580,10 +589,34 @@ genesFromVCF <- function(patientID){
   ff_ffpe_merged$PATIENT_ID <- patientID
   
   # Write out the R object
-  save(list = ff_ffpe_merged, file = paste0(patientID, "_SV_genes", ".RData"))
+  saveObject(ff_ffpe_merged, file = paste0(patientID, "_SV_genes", ".RData"))
+  #save(ff_ffpe_merged, file = paste0(patientID, "_SV_genes", ".RData"))
   
 }
-  
-# Compile all gene/transcript info, parse
+
+# Run the function
+patientIDs <- unique(QC_portal_trios$PATIENT_ID)
+
+# Run SV function for each patient ID
+sapply(patientIDs, genesFromVCF)
+
+# Get all data together
+result <- data.frame()
+result <- lapply(patientIDs, function(x){
+  table <- loadObject(paste0(patientID, "_SV_genes", ".RData"))
+  result <- rbind(result, table)
+})
+
+# Merge into one data frame
+result <- merge_recurse(result)
+
+# Change class from list to chr
+result$CSQT <- as.character(result$CSQT)
+
+# Write out the result (HPC)
+write.table(result, file = paste0(today, "_SVgenes_all", ".tsv"), row.names = F, quote = F, sep = "\t")
+
+# Read the table with genes ---- ERROR, cont here; need to convert AsIs into something better
+trio_genes <- read.table("2017-02-27_SVgenes_all.tsv")
 
 # Add gene info to SV result, list overlaps
