@@ -11,6 +11,7 @@ library(VariantAnnotation)
 library(reshape)
 library(ggplot2)
 library(scales)
+library(R.utils)
 
 # Working directory on the HPC
 setwd("/home/mmijuskovic/FFPE/SV_trio_comparison")
@@ -601,22 +602,86 @@ patientIDs <- unique(QC_portal_trios$PATIENT_ID)
 sapply(patientIDs, genesFromVCF)
 
 # Get all data together
-result <- data.frame()
-result <- lapply(patientIDs, function(x){
-  table <- loadObject(paste0(patientID, "_SV_genes", ".RData"))
-  result <- rbind(result, table)
+result2 <- data.frame()
+result2 <- lapply(patientIDs, function(x){
+  table <- loadObject(paste0(x, "_SV_genes", ".RData"))
+  result2 <- rbind(result2, table)
 })
 
-# Merge into one data frame
-result <- merge_recurse(result)
+# Merge into one data frame (HPC)
+result2 <- merge_recurse(result2)
 
-# Change class from list to chr
-result$CSQT <- as.character(result$CSQT)
+# Write out the result as an R object (HPC)
+saveObject(result2, file = paste0(today, "_SV_genes_all", ".RData"))
 
-# Write out the result (HPC)
-write.table(result, file = paste0(today, "_SVgenes_all", ".tsv"), row.names = F, quote = F, sep = "\t")
+# Read the table with genes
+trio_genes <- loadObject("2017-02-28_SV_genes_all.RData")
 
-# Read the table with genes ---- ERROR, cont here; need to convert AsIs into something better
-trio_genes <- read.table("2017-02-27_SVgenes_all.tsv")
+# Add gene info to unfiltered SV results
+# NOTE that some SVs share IDs across patients; best to join using ID AND PATIENT_ID
+sum(duplicated(trio_genes$ID)) # 13
+sum(duplicated(result$ID))  # 11
+result <- left_join(result, trio_genes) # this will join by all common columns!
 
-# Add gene info to SV result, list overlaps
+# Add the Domain1 and Domain2 transcript counts to SVs (from annotation in the VCF)
+result$CSQT <- as.character(result$CSQT )
+result[result$CSQT == "character(0)",]$CSQT <- ""
+# Domain 1
+result$Domain1_count <- sapply(1:dim(result)[1], function(x){
+  sum(sapply(1:dim(domain1)[1], function(y){
+    grepl(domain1$transcript_ID[y], result$CSQT[x])
+  }))
+})
+# Domain 2
+result$Domain2_count <- sapply(1:dim(result)[1], function(x){
+  sum(sapply(1:dim(domain2)[1], function(y){
+    grepl(domain2$transcript_ID[y], result$CSQT[x])
+  }))
+})
+
+# Add Domain1 and Domain2 gene names to the results table --- continue here, only 1st gene is listed
+result$Domain1_genes <- sapply(1:dim(result)[1], function(x){
+  as.character(domain1$gene_name[sapply(1:dim(domain1)[1], function(y){
+    grepl(domain1$transcript_ID[y], result$CSQT[x])
+  })])
+})
+result$Domain2_genes <- sapply(1:dim(result)[1], function(x){
+  as.character(domain2$gene_name[sapply(1:dim(domain2)[1], function(y){
+    grepl(domain2$transcript_ID[y], result$CSQT[x])
+  })])
+})
+
+
+### Overiew of Domain 1,2 overlap in filtered-out SVs
+# Add duplicated flag to make it easier to plot and count unique SV (now FF and FFPE concordant are listed both)
+result$DuplicatedSV <- as.numeric(duplicated(result$KEY))
+# Overview of Domain 1 overlap
+table(result[result$DuplicatedSV == 0,]$Domain1_count != 0, result[result$DuplicatedSV == 0,]$SVTYPE)
+# Overview of Domain 2 overlap
+table(result[result$DuplicatedSV == 0,]$Domain2_count != 0, result[result$DuplicatedSV == 0,]$SVTYPE)
+
+### Count the unfiltered SVs if only FF are taken into account (count BND as half!!!)
+table(result[((result$DuplicatedSV == 0) & (result$FF == "FF")),]$Domain1_count != 0, result[((result$DuplicatedSV == 0) & (result$FF == "FF")),]$SVTYPE)
+table(result[((result$DuplicatedSV == 0) & (result$FF == "FF")),]$Domain2_count != 0, result[((result$DuplicatedSV == 0) & (result$FF == "FF")),]$SVTYPE)
+
+
+
+# Plot overlap with Domain1/2 genes by SVTYPE (count BND once, remove double entry for concordant SVs)
+
+
+# Overlap of filtered SVs with Domain1/2 genes
+sum(duplicated(result_filt$ID))  # 0
+sum(duplicated(result[result$FILTERED == 0,]$ID))  #0
+result_filt <- left_join(result_filt, (result %>% filter(FILTERED == 0) %>% dplyr::select(PATIENT_ID, ID, Domain1_count, Domain2_count)))
+# Add duplicated flag to make it easier to plot and count unique SV (now FF and FFPE concordant are listed both)
+result_filt$DuplicatedSV <- as.numeric(duplicated(result_filt$KEY))
+
+### Overview of Domain1,2 overlap in filtered SVs
+result_filt %>% filter(Domain2_count != 0, DuplicatedSV == 0) %>% dplyr::select(KEY, SVLEN, PATIENT_ID, TumorType, Domain1_count, Domain2_count)
+# Overview of Domain 1 overlap
+table(result_filt[result_filt$DuplicatedSV == 0,]$Domain1_count != 0, result_filt[result_filt$DuplicatedSV == 0,]$SVTYPE)
+# Overview of Domain 2 overlap
+table(result_filt[result_filt$DuplicatedSV == 0,]$Domain2_count != 0, result_filt[result_filt$DuplicatedSV == 0,]$SVTYPE)
+
+
+
