@@ -320,6 +320,16 @@ recurr_KEYs <- recurrent_SVs %>% filter(NUM_PATIENTS >1) %>% .$KEY
 recurrent_SVs %>% filter(KEY %in% recurr_KEYs)
 result %>% filter(KEY %in% recurr_KEYs) %>% dplyr::select(KEY, SVLEN, SR_REF, SR_ALT, CONCORDANT, PATIENT_ID)
 
+# Add MATE_KEY to the main result table
+result$KEY <- as.character(result$KEY)
+result$ID <- as.character(result$ID)
+result$MATEID <- as.character(result$MATEID)
+result$MATE_KEY <- NA
+result[result$SVTYPE == "BND",]$MATE_KEY <- sapply(1:dim(result[result$SVTYPE == "BND",])[1], function(x){
+  result[result$ID == (result[result$SVTYPE == "BND",]$MATEID[x]),]$KEY
+})
+
+
 ### Remove 3 recurrent SVs and plot recall/precision per patient
 result_filt <- result %>% filter(FILTERED == 0, !(KEY %in% recurr_KEYs))  # 90 left
 
@@ -361,9 +371,9 @@ result_filt$TumorType <- QC_portal_trios[match(result_filt$PATIENT_ID, QC_portal
 
 #########  Summarize SVs, add QC data ######### 
 
-# List unique SVs to be reviewed manually
+# List unique SVs to be reviewed manually (51 total)
 result_filt[(!duplicated(result_filt$KEY)),] %>% dplyr::select(PATIENT_ID, TumorType, FF, KEY, MATE_KEY, ID, SVLEN, CIGAR, HOMLEN, LEFT_SVINSSEQ, RIGHT_SVINSSEQ, SOMATICSCORE, PR_ALT, SR_ALT, CONCORDANT)
-write.table((result_filt[(!duplicated(result_filt$KEY)),] %>% dplyr::select(PATIENT_ID, TumorType, FF, KEY, MATE_KEY, ID, SVLEN, CIGAR, HOMLEN, LEFT_SVINSSEQ, RIGHT_SVINSSEQ, SOMATICSCORE, PR_ALT, SR_ALT, CONCORDANT)), quote = F, row.names = F, sep = "\t", file = "HighConf_SVs_FFPE_trios.tsv")
+#write.table((result_filt[(!duplicated(result_filt$KEY)),] %>% dplyr::select(PATIENT_ID, TumorType, FF, KEY, MATE_KEY, ID, SVLEN, CIGAR, HOMLEN, LEFT_SVINSSEQ, RIGHT_SVINSSEQ, SOMATICSCORE, PR_ALT, SR_ALT, CONCORDANT)), quote = F, row.names = F, sep = "\t", file = "HighConf_SVs_FFPE_trios.tsv")
 
 # Total unique SVs
 length(unique(result_filt$KEY))  # 51
@@ -532,13 +542,17 @@ table(result$FILTER2, result$SVTYPE)
 #########  Overlap with Domain 1, 2 genes #########  
 
 # Read tables containing Domain 1 (actionable) and Domain 2 (cancer census) genes
-domain1 <- read.csv("ACTIONABLE_GENES_IN_SOLID_TUMOUR.v1.2.csv")
+domain1 <- read.csv("GENOMONCOLOGY_SOLID_TUMOUR.SV.v1.3.csv")
 domain2 <- read.csv("CANCER_CENSUS_GENES.v1.2.csv")
 
+# Remove duplicates and functional consequence column to get a unique set
+domain1 <- domain1 %>% select(-(alteration))
+domain1 <- unique(domain1)
+
 # Check and examine duplicated IDs (note that some genes appear duplicated since they exist on alt haplotypes; they will have different gene_ID)
-sum(duplicated(domain1$gene_name)) # 12
-sum(duplicated(domain1$transcript_ID))  # 10
-sum(duplicated(domain1$gene_ID_ID))  # 0
+sum(duplicated(domain1$gene_name)) # 1 (one gene exists on a contig as well, with different gene/transcripts ID, hence double entry)
+sum(duplicated(domain1$transcript_ID))  # 0
+sum(duplicated(domain1$gene_ID))  # 0
 sum(duplicated(domain2$gene_name)) # 46
 sum(duplicated(domain2$transcript_ID))  # 0
 sum(duplicated(domain2$gene_ID_ID))  # 0
@@ -623,7 +637,8 @@ sum(duplicated(trio_genes$ID)) # 13
 sum(duplicated(result$ID))  # 11
 result <- left_join(result, trio_genes) # this will join by all common columns!
 
-# Add the Domain1 and Domain2 transcript counts to SVs (from annotation in the VCF)
+# Add the Domain1 and Domain2 transcript counts to SVs 
+# (from annotation in the VCF; note that large insertion VCF entries will have ALL genes listed there)
 result$CSQT <- as.character(result$CSQT )
 result[result$CSQT == "character(0)",]$CSQT <- ""
 # Domain 1
@@ -639,17 +654,17 @@ result$Domain2_count <- sapply(1:dim(result)[1], function(x){
   }))
 })
 
-# Add Domain1 and Domain2 gene names to the results table --- continue here, only 1st gene is listed
-result$Domain1_genes <- sapply(1:dim(result)[1], function(x){
-  as.character(domain1$gene_name[sapply(1:dim(domain1)[1], function(y){
-    grepl(domain1$transcript_ID[y], result$CSQT[x])
-  })])
-})
-result$Domain2_genes <- sapply(1:dim(result)[1], function(x){
-  as.character(domain2$gene_name[sapply(1:dim(domain2)[1], function(y){
-    grepl(domain2$transcript_ID[y], result$CSQT[x])
-  })])
-})
+# # Add Domain1 and Domain2 gene names to the results table --- unfinished code, leaving it for now
+# result$Domain1_genes <- sapply(1:dim(result)[1], function(x){
+#   as.character(domain1$gene_name[sapply(1:dim(domain1)[1], function(y){
+#     grepl(domain1$transcript_ID[y], result$CSQT[x])
+#   })])
+# })
+# result$Domain2_genes <- sapply(1:dim(result)[1], function(x){
+#   as.character(domain2$gene_name[sapply(1:dim(domain2)[1], function(y){
+#     grepl(domain2$transcript_ID[y], result$CSQT[x])
+#   })])
+# })
 
 
 ### Overiew of Domain 1,2 overlap in filtered-out SVs
@@ -665,11 +680,7 @@ table(result[((result$DuplicatedSV == 0) & (result$FF == "FF")),]$Domain1_count 
 table(result[((result$DuplicatedSV == 0) & (result$FF == "FF")),]$Domain2_count != 0, result[((result$DuplicatedSV == 0) & (result$FF == "FF")),]$SVTYPE)
 
 
-
-# Plot overlap with Domain1/2 genes by SVTYPE (count BND once, remove double entry for concordant SVs)
-
-
-# Overlap of filtered SVs with Domain1/2 genes
+### Overlap of filtered SVs with Domain1/2 genes
 sum(duplicated(result_filt$ID))  # 0
 sum(duplicated(result[result$FILTERED == 0,]$ID))  #0
 result_filt <- left_join(result_filt, (result %>% filter(FILTERED == 0) %>% dplyr::select(PATIENT_ID, ID, Domain1_count, Domain2_count)))
@@ -684,4 +695,9 @@ table(result_filt[result_filt$DuplicatedSV == 0,]$Domain1_count != 0, result_fil
 table(result_filt[result_filt$DuplicatedSV == 0,]$Domain2_count != 0, result_filt[result_filt$DuplicatedSV == 0,]$SVTYPE)
 
 
+####### Write out SV results table ####### 
+
+result$MATE_KEY <- as.character(result$MATE_KEY)
+write.csv(result, file = paste0("FFPE_trios_unfiltered_SVs_", today, ".csv"), row.names = F, quote = F)
+write.table((result_filt[(!duplicated(result_filt$KEY)),] %>% dplyr::select(PATIENT_ID, TumorType, FF, KEY, MATE_KEY, ID, SVLEN, CIGAR, HOMLEN, LEFT_SVINSSEQ, RIGHT_SVINSSEQ, SOMATICSCORE, PR_ALT, SR_ALT, CONCORDANT, Domain1_count, Domain2_count)), quote = F, row.names = F, sep = "\t", file = "HighConf_SVs_FFPE_trios.tsv")
 
