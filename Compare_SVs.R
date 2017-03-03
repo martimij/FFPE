@@ -16,6 +16,12 @@ library(R.utils)
 # Working directory on the HPC
 setwd("/home/mmijuskovic/FFPE/SV_trio_comparison")
 
+### For plots
+# Blank theme
+blank <-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank())
+# Black regression line (linear model)
+regr_line <- geom_smooth(method = "lm", se = F, aes(group = 1), linetype = 2, col = "black", size = 0.5)
+
 
 ######### Compile and filter Manta SVs ######### 
 
@@ -419,10 +425,6 @@ write.csv(SV_summary, file = paste0("Full_SV_summary_", today, ".csv"), row.name
 
 #########  Create plots and tables #########  
 
-# Blank theme
-blank <-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black"), legend.title=element_blank())
-# Black regression line (linear model)
-regr_line <- geom_smooth(method = "lm", se = F, aes(group = 1), linetype = 2, col = "black", size = 0.5)
 
 # Barplots of overlapping and unique SVs (normalized) for all 19 trios with SV calls
 # First recast the data (each of 3 bp values in separate row, with PATIENT_ID, with indexes 1-2-3), needs package "reshape"
