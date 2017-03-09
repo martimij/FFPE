@@ -88,11 +88,16 @@ compareSNV <- function(patientID){
   }) 
  
   # # Sanity check (!!! found duplicates - traced the error to the tiering pipeline)
-  # sum(duplicated(ff))  #33
-  # sum(duplicated(ff$KEY))  #37
-  # sum(duplicated(ffpe))   #38
-  # sum(duplicated(ffpe$KEY))  #41
- 
+  sum(duplicated(ff))  #33  # after OpenCGA fix -> 1
+  sum(duplicated(ff$KEY))  #37  # after OpenCGA fix -> 1
+  
+  # Checking the leftover duplicate
+  dup_key <- ff[duplicated(ff$KEY),]$KEY
+  ff %>% filter(KEY == dup_key)
+  
+  sum(duplicated(ffpe))   #38
+  sum(duplicated(ffpe$KEY))  #41
+
   # Deduplicate
   ff <- ff[!duplicated(ff),]
   ffpe <- ffpe[!duplicated(ffpe),]

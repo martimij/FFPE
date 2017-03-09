@@ -16,7 +16,7 @@ blank <-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_b
 regr_line <- geom_smooth(method = "lm", se = F, aes(group = 1), linetype = 2, col = "black", size = 0.5)
 
 
-############  Read and clean data ############  
+############  Read and clean BRC pilot data ############  
 
 # Read list of pilot samples (incl. BRC FFPE trios)
 pilot <- read.csv("/Users/MartinaMijuskovic/Documents/FFPE/Pilot data/cancer_pilot_samples_David.csv")
@@ -63,13 +63,15 @@ pilot[pilot$PATIENT_ID %in% names(trios[trios == 1]),]$Trio <- 1
 
 # Number of trios
 sum(trios)  # 41
-sum(pilot$Trio)/3  # 41.33333  (one sample extra?)
+sum(pilot$Trio)/3  # 41.33333  (one FFPE sample extra!)
+table(pilot$SAMPLE_TYPE, pilot$Trio, exclude = NULL)
 
 # Find the origin of the extra sample
 sum(duplicated(pilot$SAMPLE_WELL_ID))  # 0
 table(table(pilot$PATIENT_ID))  # 20 patients with 2 samples, 40 with trios, 1 with 4 samples
 table(pilot$PATIENT_ID)  # 200000960 has 4 samples
-pilot %>% filter(PATIENT_ID == "200000960")  # this patient has 2 FFPE samples listed (one may have failed but I have no info; older one?)
+pilot %>% filter(PATIENT_ID == "200000960")  # this patient has 2 FFPE samples listed 
+# (one may have failed but I have no info; older one?; LP2000830-DNA_E01 FFPE sample has only 20% purity)
 
 # NOTE that one sample is denoted "EXPERIMENTAL" - best to remove; also missing diagnosis (PATIENT_ID==200000316)
 pilot %>% filter(modifier == "EXPERIMENTAL")
@@ -104,7 +106,7 @@ pilot_extra1 %>% filter(SAMPLE_WELL_ID %in% c(trio_ff_ids, trio_ffpe_ids))  # so
 pilot_extra2 %>% filter(SAMPLE_WELL_ID %in% c(trio_ff_ids, trio_ffpe_ids))  # some marked "EXPT" under "PILOT"
 
 
-# Add tumor info from the 2nd file
+# Add tumor info from the 2nd file, clean up
 pilot <- left_join(pilot, (pilot_extra2 %>% select(SAMPLE_WELL_ID, TUMOR, SAMPLE_TYPE, CENTER, PILOT)))
 table(pilot$Trio, pilot$TUMOR)
 pilot[is.na(pilot$TUMOR),]$TUMOR <- "UNKNOWN"
@@ -115,7 +117,15 @@ pilot$TUMOR <- as.character(pilot$TUMOR)
 unique(pilot %>% filter(Trio == 1, TUMOR == "UNKNOWN") %>% .$PATIENT_ID)  # 200000926 200000929 200000953 200000954 200000960 200001299 200001310
 pilot %>% filter(PATIENT_ID %in% (unique(pilot %>% filter(Trio == 1, TUMOR == "UNKNOWN") %>% .$PATIENT_ID)))
 
+# Manually add tumor type using the dianogostic codes (http://www.icd10data.com/)
+pilot[pilot$assigned_diagnosis %in% c("C50.9", "C50.3", "C50.8"),]$TUMOR <- "BREAST"
+pilot[pilot$assigned_diagnosis == "C34.1",]$TUMOR <- "LUNG"
+pilot[pilot$assigned_diagnosis %in% c("C18.7", "C19X", "C18.0"),]$TUMOR <- "COLORECTAL"
+
+# Check tumor types
+table(pilot$Trio, pilot$TUMOR, exclude = NULL) # No UNKNOWN tumor types in Trios left
 
 
+############  Add BRC pilot QC data ############ 
 
 
