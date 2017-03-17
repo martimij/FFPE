@@ -24,8 +24,9 @@ setwd("/home/mmijuskovic/FFPE/CNV_trio_comparison")
 today <- Sys.Date()
 
 # Load the manifest (HPC)
-QC_portal_trios <- read.csv("/home/mmijuskovic/FFPE/CNV_trio_comparison/QC_portal_trios.csv")
-
+#QC_portal_trios <- read.csv("/home/mmijuskovic/FFPE/CNV_trio_comparison/QC_portal_trios.csv")
+QC_portal_trios <- read.csv("/home/mmijuskovic/FFPE/QC_portal_62_trios.csv")
+  
 # Subset for FF and FFPE samples
 QC_portal_trios <- QC_portal_trios %>% filter(SAMPLE_TYPE %in% c("FF", "FFPE"))
 

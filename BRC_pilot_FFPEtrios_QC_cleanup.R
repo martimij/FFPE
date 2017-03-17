@@ -6,6 +6,7 @@ library(dplyr)
 library(ggvis)
 library(ggplot2)
 library(VariantAnnotation)
+library(data.table)
 
 rm(list=ls())
 
@@ -154,6 +155,27 @@ QC_BRC <- inner_join(pilot, QC_BRC)
 names(QC_BRC)[6] <- "BamPath"
 names(QC_BRC)[10] <- "TumorType"
 
+############   Get the correct (v4) BamPath for BRC ############  
+
+# Read the current upload report, restrict to cancer, V4 and qc_passed
+today <- Sys.Date()
+system(paste0("wget ", "https://upload-reports.gel.zone/upload_report.", today, ".txt"))
+upload <- read.table(paste0("upload_report.", today, ".txt"), sep = "\t")
+colnames(upload) <- as.character(fread(paste0("upload_report.", today, ".txt"), skip = 14, nrows = 1, header = F))
+#upload <- upload %>% filter(`Delivery Version` == "V4", Status == "qc_passed", Type %in% c("cancer germline", "cancer tumour"))
+# Samples with non-pass status in bertha (upload report)
+#missing <- QC_BRC %>% filter(is.na(BamPath)) %>% .$SAMPLE_WELL_ID
+upload %>% filter(Platekey %in% missing, Status != "qc_passed") %>% dplyr::select(Platekey, Status)
+
+upload <- upload %>% filter(`Delivery Version` == "V4", Type %in% c("cancer germline", "cancer tumour"))  # not all have "qc_passed" status, removing it
+upload$Path <- as.character(upload$Path)
+
+# # Correct the BamPath (this is the old path, to v2)
+# QC_BRC$BamPath <- paste0("/genomes", QC_BRC$BamPath)
+
+# Add new (v4) BAM paths to the BRC table
+QC_BRC$BamPath <- upload[match(QC_BRC$SAMPLE_WELL_ID, upload$Platekey),]$Path
+D
 
 ############  Add BRC data to initial 26 trios ############ 
 
