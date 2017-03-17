@@ -36,7 +36,7 @@ QC_portal_trios$VCF_path <- as.character(sapply(QC_portal_trios$BamPath, functio
 }))
 
 
-# Function that compares CNVs from FFPE trios (VCFs copied locally)
+# Function that compares CNVs from FFPE trios
 compareCNV <- function(patientID){
   
   # Get FF and FFPE VCF paths for specified patient ID and read into a Large CollapsedVCF object (VariantAnnotation package)

@@ -16,7 +16,7 @@ blank <-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_b
 regr_line <- geom_smooth(method = "lm", se = F, aes(group = 1), linetype = 2, col = "black", size = 0.5)
 
 
-############  Read and clean BRC pilot data ############  
+############  Clean BRC pilot data ############  
 
 # Read list of pilot samples (incl. BRC FFPE trios)
 pilot <- read.csv("/Users/MartinaMijuskovic/Documents/FFPE/Pilot data/cancer_pilot_samples_David.csv")
@@ -41,7 +41,7 @@ table(pilot$sex_problem, exclude = NULL)
 table(pilot$modifier, pilot$type, exclude = NULL)
 
 # Reduce
-pilot <- pilot %>% select(manifest_id, study, GelId, type, platekey, base_dir, modifier, assigned_diagnosis)
+pilot <- pilot %>% dplyr::select(manifest_id, study, GelId, type, platekey, base_dir, modifier, assigned_diagnosis)
 
 # Change names to fit 26 previous trios analysis
 names(pilot)[3:5] <- c("PATIENT_ID", "SAMPLE_TYPE", "SAMPLE_WELL_ID")
@@ -59,7 +59,7 @@ trios <- sapply(unique(pilot$PATIENT_ID), function(x){
 names(trios) <- unique(pilot$PATIENT_ID)
 
 pilot$Trio <- 0
-pilot[pilot$PATIENT_ID %in% names(trios[trios == 1]),]$Trio <- 1
+pilot[as.character(pilot$PATIENT_ID) %in% names(trios[trios == 1]),]$Trio <- 1
 
 # Number of trios
 sum(trios)  # 41
@@ -67,9 +67,9 @@ sum(pilot$Trio)/3  # 41.33333  (one FFPE sample extra!)
 table(pilot$SAMPLE_TYPE, pilot$Trio, exclude = NULL)
 
 # Find the origin of the extra sample
-sum(duplicated(pilot$SAMPLE_WELL_ID))  # 0
 table(table(pilot$PATIENT_ID))  # 20 patients with 2 samples, 40 with trios, 1 with 4 samples
 table(pilot$PATIENT_ID)  # 200000960 has 4 samples
+sum(duplicated(pilot$SAMPLE_WELL_ID))  # 0
 pilot %>% filter(PATIENT_ID == "200000960")  # this patient has 2 FFPE samples listed 
 # (one may have failed but I have no info; older one?; LP2000830-DNA_E01 FFPE sample has only 20% purity)
 
@@ -107,7 +107,7 @@ pilot_extra2 %>% filter(SAMPLE_WELL_ID %in% c(trio_ff_ids, trio_ffpe_ids))  # so
 
 
 # Add tumor info from the 2nd file, clean up
-pilot <- left_join(pilot, (pilot_extra2 %>% select(SAMPLE_WELL_ID, TUMOR, SAMPLE_TYPE, CENTER, PILOT)))
+pilot <- left_join(pilot, (pilot_extra2 %>% dplyr::select(SAMPLE_WELL_ID, TUMOR, SAMPLE_TYPE, CENTER, PILOT)))
 table(pilot$Trio, pilot$TUMOR)
 pilot[is.na(pilot$TUMOR),]$TUMOR <- "UNKNOWN"
 pilot[pilot$TUMOR == "UNKOWN",]$TUMOR <- "UNKNOWN"
@@ -125,7 +125,50 @@ pilot[pilot$assigned_diagnosis %in% c("C18.7", "C19X", "C18.0"),]$TUMOR <- "COLO
 # Check tumor types
 table(pilot$Trio, pilot$TUMOR, exclude = NULL) # No UNKNOWN tumor types in Trios left
 
+# Subset to keep only trios
+pilot <- pilot %>% filter(Trio == 1)  # 124
 
-############  Add BRC pilot QC data ############ 
+# Remove all "experimental" samples and one that fails contamination check (200000336)
+rm_ids <- as.character(c(unique(pilot %>% filter(PILOT == "EXPT") %>% .$PATIENT_ID), unique(pilot %>% filter(modifier == "EXPERIMENTAL") %>% .$PATIENT_ID), "200000336"))
+pilot <- pilot %>% filter(!PATIENT_ID %in% rm_ids)
+
+
+############  Clean BRC pilot QC data ############ 
+
+# Read QC data for BRC pilot samples
+QC_BRC <- read.csv("/Users/MartinaMijuskovic/Documents/FFPE/Pilot data/BRC.QC.csv")
+
+# Subset for clean BRC trios (36 total)
+QC_BRC$PATIENT_ID <- as.character(QC_BRC$PATIENT_ID)
+QC_BRC <- QC_BRC %>% filter(PATIENT_ID %in% pilot$PATIENT_ID)
+dim(QC_BRC)  # 108
+
+# Clean names
+names(QC_BRC)[2:3] <- c("SAMPLE_WELL_ID", "SAMPLE_TYPE")
+
+# Merge pilot data with QC data
+pilot$PATIENT_ID <- as.character(pilot$PATIENT_ID)
+QC_BRC <- inner_join(pilot, QC_BRC)
+
+# Change names to merge with other trios properly
+names(QC_BRC)[6] <- "BamPath"
+names(QC_BRC)[10] <- "TumorType"
+
+
+############  Add BRC data to initial 26 trios ############ 
+
+# Read QC data of initial 26 trios
+QC_portal_trios <- read.csv("QC_portal_trios_final.csv")
+
+# Change tumor type entries to all CAPS
+QC_portal_trios$TumorType <- toupper(QC_portal_trios$TumorType)
+
+# Merge BRC with initial 26 trios
+QC_portal_trios$PATIENT_ID <- as.character(QC_portal_trios$PATIENT_ID)
+QC_portal_trios <- bind_rows(QC_portal_trios, QC_BRC)
+
+# Write out the full FFPE trio QC data table
+write.csv(QC_portal_trios, file = "QC_portal_62_trios.csv", quote = F, row.names = F)
+
 
 
