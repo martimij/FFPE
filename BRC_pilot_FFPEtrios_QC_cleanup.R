@@ -175,7 +175,12 @@ upload$Path <- as.character(upload$Path)
 
 # Add new (v4) BAM paths to the BRC table
 QC_BRC$BamPath <- upload[match(QC_BRC$SAMPLE_WELL_ID, upload$Platekey),]$Path
-D
+
+# List BRC trio samples with non-pass status
+upload %>% filter(Platekey %in% QC_BRC$SAMPLE_WELL_ID, Status != "qc_passed") %>% dplyr::select(Platekey, Type, DeliveryID, `Delivery Date`, `Delivery Version`, `BAM Date`, Status)
+
+
+
 
 ############  Add BRC data to initial 26 trios ############ 
 
