@@ -28,7 +28,8 @@ regr_line <- geom_smooth(method = "lm", se = F, aes(group = 1), linetype = 2, co
 today <- Sys.Date()
 
 # Load the manifest (HPC)
-QC_portal_trios <- read.csv("/home/mmijuskovic/FFPE/CNV_trio_comparison/QC_portal_trios.csv")
+#QC_portal_trios <- read.csv("/home/mmijuskovic/FFPE/CNV_trio_comparison/QC_portal_trios.csv")
+QC_portal_trios <- read.csv("/home/mmijuskovic/FFPE/QC_portal_62_trios.csv")
 
 # Subset for FF and FFPE samples
 QC_portal_trios <- QC_portal_trios %>% filter(SAMPLE_TYPE %in% c("FF", "FFPE"))
@@ -44,6 +45,8 @@ QC_portal_trios$VCF_path <- as.character(sapply(QC_portal_trios$BamPath, functio
 # Extracts only precise SVs that pass Manta filters, from regular chromosomes, with at least 3 supporting reads (either 3 PR or 3 SR minimum)
 # Filters out SVs overlapping windowMasker, simple repeats or segmental duplications (either end of SV)
 # Writes out the filtered SV table
+# 20170321 Modified to include SVs >10kb
+# 20170321 Fixed to allow for no BND
 compareSV <- function(patientID){
   
   # Get FF and FFPE VCF paths for specified patient ID and read into a Large CollapsedVCF object (VariantAnnotation package)
@@ -88,7 +91,8 @@ compareSV <- function(patientID){
   SVinfo_ff$SR_EV <- as.numeric(SVinfo_ff$SR_ALT > 0)  
   
   # Remove filtered entries, keep Manta only (WARNING: some "good" >10kb SVs might be filtered out too, filter "MGE10kb")
-  Manta_ff <- SVinfo_ff %>% filter(FILTER == "PASS", Application == "Manta")
+  # 20170321 Keep PASS and MGE10kb
+  Manta_ff <- SVinfo_ff %>% filter(FILTER %in% c("PASS","MGE10kb"), Application == "Manta")
   
   # Remove unknown CHR from the table and add chrY
   normal_chr <- c(paste0("chr", 1:22), "chrX", "chrY")  
@@ -140,7 +144,8 @@ compareSV <- function(patientID){
   SVinfo_ffpe$SR_EV <- as.numeric(SVinfo_ffpe$SR_ALT > 0)  
   
   # Remove filtered entries, keep Manta only
-  Manta_ffpe <- SVinfo_ffpe %>% filter(FILTER == "PASS", Application == "Manta")
+  # 20170321 Keep PASS and MGE10kb
+  Manta_ffpe <- SVinfo_ff %>% filter(FILTER %in% c("PASS","MGE10kb"), Application == "Manta")
   
   # Remove unknown CHR from the table and add chrY
   Manta_ffpe <- Manta_ffpe %>% filter(CHR %in% normal_chr)
@@ -149,7 +154,7 @@ compareSV <- function(patientID){
   Manta_ffpe <- Manta_ffpe %>% filter(IMPRECISE == FALSE)
   
   # Filter out SVs with <3 supporting PR AND SR reads
-  Manta_ffpe <- Manta_ffpe[!((Manta_ffpe$PR_ALT <3) & (Manta_ffpe$SR_ALT <3)),]  # 806
+  Manta_ffpe <- Manta_ffpe[!((Manta_ffpe$PR_ALT <3) & (Manta_ffpe$SR_ALT <3)),] 
   
   # Merge FF and FFPE into one table, keep info on SV source (FF or FFPE?)
   Manta_ff$FF <- "FF"
@@ -256,10 +261,13 @@ compareSV <- function(patientID){
   # Flag breakends whose mates are filtered out
   ff_ffpe_merged$MATEID <- as.character(ff_ffpe_merged$MATEID)
   ff_ffpe_merged$BND_MATE_FILTERED <- NA
-  ff_ffpe_merged[ff_ffpe_merged$SVTYPE == "BND",]$BND_MATE_FILTERED <- sapply(1:dim(ff_ffpe_merged[ff_ffpe_merged$SVTYPE == "BND",])[1], function(x){
-    if (ff_ffpe_merged[ff_ffpe_merged$SVTYPE == "BND",]$MATEID[x] %in% filtered_id) { return(1)}
-    else {return(0)}
-  })
+  # Check if there are any BND
+  if ( dim(ff_ffpe_merged[ff_ffpe_merged$SVTYPE == "BND",])[1] != 0 ) {
+    ff_ffpe_merged[ff_ffpe_merged$SVTYPE == "BND",]$BND_MATE_FILTERED <- sapply(1:dim(ff_ffpe_merged[ff_ffpe_merged$SVTYPE == "BND",])[1], function(x){
+      if (ff_ffpe_merged[ff_ffpe_merged$SVTYPE == "BND",]$MATEID[x] %in% filtered_id) { return(1)}
+      else {return(0)}
+    })
+  }
   filtered_id <- unique(c(filtered_id, (ff_ffpe_merged %>% filter(BND_MATE_FILTERED == 1) %>% .$ID)))
   ff_ffpe_merged[ff_ffpe_merged$ID %in% filtered_id,]$FILTERED <- 1
   
@@ -280,6 +288,9 @@ patientIDs <- unique(QC_portal_trios$PATIENT_ID)
 
 # Run SV function for each patient ID
 sapply(patientIDs, compareSV)
+
+# Error in if (ff_ffpe_merged[ff_ffpe_merged$SVTYPE == "BND", ]$MATEID[x] %in%  : 
+#argument is of length zero
 
 # Get all data together
 result <- data.frame()
