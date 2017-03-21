@@ -289,9 +289,6 @@ patientIDs <- unique(QC_portal_trios$PATIENT_ID)
 # Run SV function for each patient ID
 sapply(patientIDs, compareSV)
 
-# Error in if (ff_ffpe_merged[ff_ffpe_merged$SVTYPE == "BND", ]$MATEID[x] %in%  : 
-#argument is of length zero
-
 # Get all data together
 result <- data.frame()
 result <- lapply(patientIDs, function(x){
@@ -309,7 +306,7 @@ write.table(result, file = paste0(today, "_SV_all", ".tsv"), row.names = F, quot
 ######### Check and clean SVs ######### 
 
 # Read in the result
-result <- read.table("2017-02-22_SV_all.tsv", sep = "\t", header = T)
+result <- read.table("2017-03-21_SV_all.tsv", sep = "\t", header = T)
 
 # Overview of filtered concordant SVs (NOTE that BNDs are listed twice - each side as a separate BND, need to adjust for that)
 table(result[result$FILTERED ==0,]$PATIENT_ID, result[result$FILTERED ==0,]$CONCORDANT)
@@ -323,8 +320,8 @@ result %>% filter(FILTERED == 0) %>% dplyr::select(PATIENT_ID, KEY, SVTYPE, SVLE
 # table(result %>% filter(FILTERED == 0, CONCORDANT == 0, KEY == "chr11-64341843-64341923-DEL") %>% .$FF)
 
 # For each SV, check how many unique PATIENT IDs is IN
-dim(result %>% filter(FILTERED == 0))  # 139 total fitered SVs
-unique_keys <- as.character(unique(result %>% filter(FILTERED == 0) %>% .$KEY))  # 62 unique KEYs
+dim(result %>% filter(FILTERED == 0))  # 292 total fitered SVs (62 trios)
+unique_keys <- as.character(unique(result %>% filter(FILTERED == 0) %>% .$KEY))  # 133 unique KEYs (62 trios)
 result$KEY <- as.character(result$KEY)
 recurrent_SVs <- data.frame(
   NUM_OBS = sapply(unique_keys, function(x){ sum(result$KEY == x)}), 
@@ -332,7 +329,7 @@ recurrent_SVs <- data.frame(
   )
 recurrent_SVs$KEY <- rownames(recurrent_SVs)
 rownames(recurrent_SVs) <- NULL
-table(recurrent_SVs$NUM_PATIENTS)  # 3 observed in >1 patient (3, 16 and 22 patients)
+table(recurrent_SVs$NUM_PATIENTS)  # 3 observed in >1 patient (62 trios)
 recurr_KEYs <- recurrent_SVs %>% filter(NUM_PATIENTS >1) %>% .$KEY
 recurrent_SVs %>% filter(KEY %in% recurr_KEYs)
 result %>% filter(KEY %in% recurr_KEYs) %>% dplyr::select(KEY, SVLEN, SR_REF, SR_ALT, CONCORDANT, PATIENT_ID)
@@ -348,7 +345,7 @@ result[result$SVTYPE == "BND",]$MATE_KEY <- sapply(1:dim(result[result$SVTYPE ==
 
 
 ### Remove 3 recurrent SVs and plot recall/precision per patient
-result_filt <- result %>% filter(FILTERED == 0, !(KEY %in% recurr_KEYs))  # 90 left
+result_filt <- result %>% filter(FILTERED == 0, !(KEY %in% recurr_KEYs))  # 260 left
 
 ### Recast the SV summary table for easier concordance calculations
 
@@ -364,7 +361,7 @@ result_filt$MAIN_ID  <- sapply(1:dim(result_filt)[1], function(x){
   substr(result_filt$ID[x], 1, stop)
 })
 
-# Check that there are always 2 BND for each MAIN_ID
+# Check that there are always 2 BND for each MAIN_ID ----- continue here
 result_filt %>% group_by(MAIN_ID) %>% summarise(n())  # one BND is missing the mate (maybe mate is on uknown CHR?)
 
 # Remove BND that is missing the mate
