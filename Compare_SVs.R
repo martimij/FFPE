@@ -275,7 +275,10 @@ compareSV <- function(patientID){
   # Add CONCORDANT flag to FF and FFPE calls
   concordant_keys <- ff_ffpe_merged[duplicated(ff_ffpe_merged$KEY),]$KEY
   ff_ffpe_merged$CONCORDANT <- 0
-  ff_ffpe_merged[ff_ffpe_merged$KEY %in% concordant_keys,]$CONCORDANT <- 1
+  # Add a check for any concordant calls
+  if ( length(concordant_keys) != 0 ) {
+    ff_ffpe_merged[ff_ffpe_merged$KEY %in% concordant_keys,]$CONCORDANT <- 1
+  }
   
   # Write out the filtered SVs
   ff_ffpe_merged <- ff_ffpe_merged %>% dplyr::select(-(CSQT))  # Get rid of transcripts to save space & avoid parsing problems
