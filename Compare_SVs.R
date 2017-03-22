@@ -28,7 +28,8 @@ regr_line <- geom_smooth(method = "lm", se = F, aes(group = 1), linetype = 2, co
 today <- Sys.Date()
 
 # Load the manifest (HPC)
-#QC_portal_trios <- read.csv("/home/mmijuskovic/FFPE/CNV_trio_comparison/QC_portal_trios.csv")
+#QC_portal_trios <- read.csv("/home/mmijuskovic/FFPE/CNV_trio_comparison/QC_portal_trios.csv")  # old
+#QC_portal_trios <- read.csv("/Users/MartinaMijuskovic/FFPE/QC_portal_62_trios.csv")  # local
 QC_portal_trios <- read.csv("/home/mmijuskovic/FFPE/QC_portal_62_trios.csv")
 
 # Subset for FF and FFPE samples
@@ -145,7 +146,7 @@ compareSV <- function(patientID){
   
   # Remove filtered entries, keep Manta only
   # 20170321 Keep PASS and MGE10kb
-  Manta_ffpe <- SVinfo_ff %>% filter(FILTER %in% c("PASS","MGE10kb"), Application == "Manta")
+  Manta_ffpe <- SVinfo_ffpe %>% filter(FILTER %in% c("PASS","MGE10kb"), Application == "Manta")
   
   # Remove unknown CHR from the table and add chrY
   Manta_ffpe <- Manta_ffpe %>% filter(CHR %in% normal_chr)
@@ -307,6 +308,16 @@ write.table(result, file = paste0(today, "_SV_all", ".tsv"), row.names = F, quot
 
 # Read in the result
 result <- read.table("2017-03-21_SV_all.tsv", sep = "\t", header = T)
+result$PATIENT_ID <- as.character(result$PATIENT_ID)
+# Sanity check
+dim(result)  # 27008
+length(unique(result$PATIENT_ID))  # 62
+sum(duplicated(result$KEY))   # 14121
+table(result$CONCORDANT, result$SVTYPE) # All concordant - ERROR
+table(result$FF, result$SVTYPE)  # FF and FFPE exactly the same
+
+# Read in the QC data
+
 
 # Overview of filtered concordant SVs (NOTE that BNDs are listed twice - each side as a separate BND, need to adjust for that)
 table(result[result$FILTERED ==0,]$PATIENT_ID, result[result$FILTERED ==0,]$CONCORDANT)
