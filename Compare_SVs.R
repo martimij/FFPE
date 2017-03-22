@@ -304,27 +304,31 @@ result <- lapply(patientIDs, function(x){
 result <- merge_recurse(result)
 
 # Write out the result
-write.table(result, file = paste0(today, "_SV_all", ".tsv"), row.names = F, quote = F, sep = "\t")
+write.table(result, file = paste0(today, "_62_FFPEtrios_SV_all", ".tsv"), row.names = F, quote = F, sep = "\t")
 
 
 ######### Check and clean SVs ######### 
 
 # Read in the result
-result <- read.table("2017-03-21_SV_all.tsv", sep = "\t", header = T)
+result <- read.table("2017-03-22_62_FFPEtrios_SV_all.tsv", sep = "\t", header = T)
 result$PATIENT_ID <- as.character(result$PATIENT_ID)
-# Sanity check
-dim(result)  # 27008
+# Sanity check & summary
+dim(result)  # 28064
 length(unique(result$PATIENT_ID))  # 62
-sum(duplicated(result$KEY))   # 14121
-table(result$CONCORDANT, result$SVTYPE) # All concordant - ERROR
-table(result$FF, result$SVTYPE)  # FF and FFPE exactly the same
+sum(duplicated(result$KEY))   # 7926
+table(result$CONCORDANT, result$SVTYPE)
+table(result$FF, result$SVTYPE)
+table(result$FILTER, result$SVTYPE)
+table(result$ColocalizedCanvas, result$FILTER)
 
 # Read in the QC data
-
+QC_portal_trios <- read.csv("/Users/MartinaMijuskovic/FFPE/QC_portal_62_trios.csv")
 
 # Overview of filtered concordant SVs (NOTE that BNDs are listed twice - each side as a separate BND, need to adjust for that)
-table(result[result$FILTERED ==0,]$PATIENT_ID, result[result$FILTERED ==0,]$CONCORDANT)
+table(result[result$FILTERED ==0,]$PATIENT_ID, result[result$FILTERED ==0,]$CONCORDANT) # concordant events counted twice
 result %>% filter(FILTERED == 0) %>% dplyr::select(PATIENT_ID, KEY, SVTYPE, SVLEN, FF, ID, MATEID, PR_ALT, SR_ALT, CONCORDANT)
+
+########### Recurrent SVs ########### 
 
 # ### Look at the recurrent DEL (MIR7155 gene)
 # result %>% filter(FILTERED == 0, KEY == "chr11-64341843-64341923-DEL") %>% dplyr::select(PATIENT_ID, KEY, SVTYPE, SVLEN, FF, ID, MATEID, PR_ALT, SR_ALT, CONCORDANT)
@@ -333,20 +337,45 @@ result %>% filter(FILTERED == 0) %>% dplyr::select(PATIENT_ID, KEY, SVTYPE, SVLE
 # # By FF/FFPE (non-condordant)
 # table(result %>% filter(FILTERED == 0, CONCORDANT == 0, KEY == "chr11-64341843-64341923-DEL") %>% .$FF)
 
+
+### UNFILTERED SVs
+
 # For each SV, check how many unique PATIENT IDs is IN
-dim(result %>% filter(FILTERED == 0))  # 292 total fitered SVs (62 trios)
+dim(result)  # 28064 total unfitered SVs (62 trios), translocation BNDs listed separately
 unique_keys <- as.character(unique(result %>% filter(FILTERED == 0) %>% .$KEY))  # 133 unique KEYs (62 trios)
 result$KEY <- as.character(result$KEY)
 recurrent_SVs <- data.frame(
   NUM_OBS = sapply(unique_keys, function(x){ sum(result$KEY == x)}), 
   NUM_PATIENTS = sapply(unique_keys, function(x){ length(unique(result %>% filter(KEY == x) %>% .$PATIENT_ID)) })
-  )
+)
 recurrent_SVs$KEY <- rownames(recurrent_SVs)
 rownames(recurrent_SVs) <- NULL
-table(recurrent_SVs$NUM_PATIENTS)  # 3 observed in >1 patient (62 trios)
+table(recurrent_SVs$NUM_PATIENTS)  # 4 observed in >1 patient (62 trios)
 recurr_KEYs <- recurrent_SVs %>% filter(NUM_PATIENTS >1) %>% .$KEY
 recurrent_SVs %>% filter(KEY %in% recurr_KEYs)
 result %>% filter(KEY %in% recurr_KEYs) %>% dplyr::select(KEY, SVLEN, SR_REF, SR_ALT, CONCORDANT, PATIENT_ID)
+# Concordance of recurrent SVs
+table((result %>% filter(KEY %in% recurr_KEYs) %>% .$CONCORDANT))
+
+# ### FILTERED SVs
+# 
+# # For each SV, check how many unique PATIENT IDs is IN
+# dim(result %>% filter(FILTERED == 0))  # 326 total fitered SVs (62 trios)
+# unique_keys <- as.character(unique(result %>% filter(FILTERED == 0) %>% .$KEY))  # 133 unique KEYs (62 trios)
+# result$KEY <- as.character(result$KEY)
+# recurrent_SVs <- data.frame(
+#   NUM_OBS = sapply(unique_keys, function(x){ sum(result$KEY == x)}), 
+#   NUM_PATIENTS = sapply(unique_keys, function(x){ length(unique(result %>% filter(KEY == x) %>% .$PATIENT_ID)) })
+#   )
+# recurrent_SVs$KEY <- rownames(recurrent_SVs)
+# rownames(recurrent_SVs) <- NULL
+# table(recurrent_SVs$NUM_PATIENTS)
+# recurr_KEYs <- recurrent_SVs %>% filter(NUM_PATIENTS >1) %>% .$KEY
+# recurrent_SVs %>% filter(KEY %in% recurr_KEYs)
+# result %>% filter(KEY %in% recurr_KEYs) %>% dplyr::select(KEY, SVLEN, SR_REF, SR_ALT, CONCORDANT, PATIENT_ID)
+
+
+#########  Summarize SVs ######### 
 
 # Add MATE_KEY to the main result table
 result$KEY <- as.character(result$KEY)
@@ -358,37 +387,55 @@ result[result$SVTYPE == "BND",]$MATE_KEY <- sapply(1:dim(result[result$SVTYPE ==
 })
 
 
-### Remove 3 recurrent SVs and plot recall/precision per patient
+# Extract the common ID part for both BND mates
+result$ID <- as.character(result$ID)
+result$MATEID <- as.character(result$MATEID)
+result$MAIN_ID  <- sapply(1:dim(result)[1], function(x){
+  stop <- nchar(result$ID[x])-1
+  substr(result$ID[x], 1, stop)
+})
+
+# Check that there are always 2 BND for each MAIN_ID
+result %>% group_by(MAIN_ID) %>% summarise(n())  # some BND are missing the mate (mates on uknown CHR, filtered out previously)
+# NOTE that some MAIN_IDs are duplicated across samples (different SVs in different samples); this is not the best way to filter BNDs
+
+
+### Summaries by filter
+
+# Create a new filter variable
+result$FILTER2 <- sapply(1:dim(result)[1], function(x) {
+  if (result$wMasker_filtered[x] == 1) {"wMasker"} 
+  else if (result$repeats_filtered[x] == 1) {"simple_rep"} 
+  else if (result$segdups_filtered[x] == 1) {"seg_dupl"} 
+  else if ((!is.na(result$BND_MATE_FILTERED[x])) & result$BND_MATE_FILTERED[x] == 1) {"mate_filtered"}
+  else {"PASS"}
+})
+# Overview of all SVs by FILTER  
+table(result$FILTER2, result$SVTYPE)
+# Overview of FF/FFPE SVs separately by FILTER
+table(result[result$FF == "FF",]$FILTER2, result[result$FF == "FF",]$SVTYPE)
+table(result[result$FF == "FFPE",]$FILTER2, result[result$FF == "FFPE",]$SVTYPE)
+
+# > sum(is.na(result[result$FF == "FFPE",]$MATE_KEY))
+# [1] 8615
+# > dim(result[result$FF == "FFPE",])
+# [1] 14560    56
+
+##################### ------continue HERE
+
+
+
+# # Remove the BND with a filtered mate (discovered above) -- checked VCF; mate maps to unkn chr
+# result <- result %>% filter(ID != "MantaBND:341610:0:1:3:1:0:1")
+
+#### Remove BNDs with no mate (mate filtered previously!!!)  ------ continue here
+
+
+
+############ Filter SVs ############ 
+
+### Remove 4 recurrent SVs and plot recall/precision per patient
 result_filt <- result %>% filter(FILTERED == 0, !(KEY %in% recurr_KEYs))  # 260 left
-
-### Recast the SV summary table for easier concordance calculations
-
-# Each row is a unique KEY of filtered SVs
-# sum(duplicated(result_filt$ID))
-# sum(duplicated(result_filt[result_filt$MATEID != "character(0)",]$MATEID))  # 0
-
-# Make a new unique breakend KEY consisting of two translocation mates; check that both mates are concordant/discordant
-result_filt$ID <- as.character(result_filt$ID)
-result_filt$MATEID <- as.character(result_filt$MATEID)
-result_filt$MAIN_ID  <- sapply(1:dim(result_filt)[1], function(x){
-  stop <- nchar(result_filt$ID[x])-1
-  substr(result_filt$ID[x], 1, stop)
-})
-
-# Check that there are always 2 BND for each MAIN_ID ----- continue here
-result_filt %>% group_by(MAIN_ID) %>% summarise(n())  # one BND is missing the mate (maybe mate is on uknown CHR?)
-
-# Remove BND that is missing the mate
-result_filt <- result_filt %>% filter(MAIN_ID != "MantaBND:341610:0:1:3:1:0:")
-
-# Add MATE_KEY
-result_filt$KEY <- as.character(result_filt$KEY)
-result_filt$ID <- as.character(result_filt$ID)
-result_filt$MATEID <- as.character(result_filt$MATEID)
-result_filt$MATE_KEY <- NA
-result_filt[result_filt$SVTYPE == "BND",]$MATE_KEY <- sapply(1:dim(result_filt[result_filt$SVTYPE == "BND",])[1], function(x){
-  result_filt[result_filt$ID == (result_filt[result_filt$SVTYPE == "BND",]$MATEID[x]),]$KEY
-})
 
 # Keep only one BND mate
 result_filt <- result_filt[!duplicated(result_filt$MAIN_ID),]
@@ -397,7 +444,11 @@ result_filt <- result_filt[!duplicated(result_filt$MAIN_ID),]
 result_filt$TumorType <- QC_portal_trios[match(result_filt$PATIENT_ID, QC_portal_trios$PATIENT_ID),]$TumorType
 
 
-#########  Summarize SVs, add QC data ######### 
+
+
+
+
+
 
 # List unique SVs to be reviewed manually (51 total)
 result_filt[(!duplicated(result_filt$KEY)),] %>% dplyr::select(PATIENT_ID, TumorType, FF, KEY, MATE_KEY, ID, SVLEN, CIGAR, HOMLEN, LEFT_SVINSSEQ, RIGHT_SVINSSEQ, SOMATICSCORE, PR_ALT, SR_ALT, CONCORDANT)
@@ -547,20 +598,6 @@ ggplot((result_filt %>% filter(CONCORDANT == 1)), aes(x=factor(SVTYPE), y=PR_ALT
 ggplot((result_filt %>% filter(CONCORDANT == 1)), aes(x=factor(SVTYPE), y=SR_ALT)) + geom_boxplot(aes(colour = factor(FF))) + blank + theme(axis.title.x = element_blank()) + ggtitle("Supporting Split Reads")
 
 
-#########  Overview of filtered SVs #########  
-
-# Remove the BND with a filtered mate (discovered above) -- checked VCF; mate maps to unkn chr
-result <- result %>% filter(ID != "MantaBND:341610:0:1:3:1:0:1")
-
-# Create a filter variable
-result$FILTER2 <- sapply(1:dim(result)[1], function(x) {
-  if (result$wMasker_filtered[x] == 1) {"wMasker"} 
-  else if (result$repeats_filtered[x] == 1) {"simple_rep"} 
-  else if (result$segdups_filtered[x] == 1) {"seg_dupl"} 
-  else if ((!is.na(result$BND_MATE_FILTERED[x])) & result$BND_MATE_FILTERED[x] == 1) {"mate_filtered"}
-  else {"PASS"}
-})
-table(result$FILTER2, result$SVTYPE)
 
 
 #########  Overlap with Domain 1, 2 genes #########  
