@@ -345,7 +345,7 @@ SVinfo_ff$START <- as.data.frame(ranges(ff_vcf))$start
 SVinfo_ff$CHR <- as.character(seqnames(ff_vcf))
 
 # Examine some variants, look at false positives
-#SVinfo_ff %>% filter(FILTER == "PASS", IMPRECISE == "FALSE") %>% select(CHR, START, END, SVLEN, SVTYPE, IMPRECISE, FILTER)
+#SVinfo_ff %>% filter(FILTER == "PASS", IMPRECISE == "FALSE") %>% dplyr::select(CHR, START, END, SVLEN, SVTYPE, IMPRECISE, FILTER)
 
 # Add number of supporting paired and reads
 #ff_vcf@assays$data$PR
@@ -684,8 +684,22 @@ ff_ffpe_merged_fil %>% filter(CONCORDANT == 1) %>% select(KEY, FF, PR_ALT, SR_AL
 ff_ffpe_merged_fil %>% select(KEY, FF, PR_ALT, SR_ALT, BND_DEPTH, MATE_BND_DEPTH, SVLEN)
 
 
+################# Check for false precise variants ################# 
 
+table(Manta_ff$IMPRECISE, exclude = NULL)  # All IMPRECISE=FALSE
+summary(Manta_ff$SR_ALT)  # All have at least 2 SR evidence 
+summary(Manta_ff$PR_ALT)
 
+table(Manta_ffpe$IMPRECISE, exclude = NULL)  # All IMPRECISE=FALSE
+summary(Manta_ffpe$SR_ALT)  # All have at least 1 SR evidence 
+summary(Manta_ffpe$PR_ALT)
+
+# Look into all 124 samples from total FFPE trio set
+result <- read.table("2017-03-22_62_FFPEtrios_SV_all.tsv", sep = "\t", header = T)
+result$PATIENT_ID <- as.character(result$PATIENT_ID)
+false_precise <- result %>% filter(SR_ALT == 0)  # 88 found
+table(false_precise$SVTYPE, false_precise$SR_ALT)
+table(false_precise$SVTYPE, false_precise$FILTER)  # NOTE that some are >10 kb (13 total)
 
 
 
