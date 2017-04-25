@@ -15,6 +15,7 @@ library(R.utils)
 
 # Working directory on the HPC
 setwd("/home/mmijuskovic/FFPE/SV_trio_comparison")
+#setwd("/Users/MartinaMijuskovic/FFPE")
 
 ### For plots
 # Blank theme
@@ -312,6 +313,7 @@ write.table(result, file = paste0(today, "_62_FFPEtrios_SV_all", ".tsv"), row.na
 # Read in the result
 result <- read.table("2017-03-22_62_FFPEtrios_SV_all.tsv", sep = "\t", header = T)
 result$PATIENT_ID <- as.character(result$PATIENT_ID)
+
 # Sanity check & summary
 dim(result)  # 28064
 length(unique(result$PATIENT_ID))  # 62
@@ -321,8 +323,18 @@ table(result$FF, result$SVTYPE)
 table(result$FILTER, result$SVTYPE)
 table(result$ColocalizedCanvas, result$FILTER)
 
-# Read in the QC data
-QC_portal_trios <- read.csv("/Users/MartinaMijuskovic/FFPE/QC_portal_62_trios.csv")
+
+# Subset to filtered only
+result_fil <- result %>% filter(FILTERED == 0)
+dim(result_fil)  # 326
+
+# Check Canvas concordance of DEL and DUP only
+dim(result[result$SVTYPE %in% c("DEL", "DUP"),])  # 14297
+table(result[result$SVTYPE %in% c("DEL", "DUP"),]$ColocalizedCanvas, result[result$SVTYPE %in% c("DEL", "DUP"),]$FILTER, exclude = NULL)
+dim(result_fil[result_fil$SVTYPE %in% c("DEL", "DUP"),])  # 205
+table(result_fil[result_fil$SVTYPE %in% c("DEL", "DUP"),]$ColocalizedCanvas, result_fil[result_fil$SVTYPE %in% c("DEL", "DUP"),]$FILTER, exclude = NULL)
+
+
 
 # Overview of filtered concordant SVs (NOTE that BNDs are listed twice - each side as a separate BND, need to adjust for that)
 table(result[result$FILTERED ==0,]$PATIENT_ID, result[result$FILTERED ==0,]$CONCORDANT) # concordant events counted twice
